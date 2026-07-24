@@ -53,15 +53,14 @@ h1,h2,h3,.faq-q,.btn-amber,.btn-out,.fl,.nl,.lc{text-transform:lowercase}
 .flow-node{flex:0 0 auto;width:150px}
 .flow-link{flex:1 1 0;min-width:120px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:0 6px}
 .flow-line{position:relative;width:100%;height:2px}
-.flow-line-a{background:linear-gradient(90deg,rgba(255,175,0,.55),rgba(0,175,175,.55))}
-.flow-line-b{background:rgba(230,230,230,.2)}
+.flow-line-a{background:rgba(255,175,0,.5)}
+.flow-line-b{background:rgba(0,175,175,.45)}
 .flow-pkt{position:absolute;left:-6px;top:50%;transform:translateY(-50%);width:6px;height:6px;animation:packet 2.2s linear infinite}
 @media (max-width:700px){
   .flow{flex-direction:column;min-width:0}
   .flow-node{width:100%}
   .flow-link{flex:0 0 auto;width:100%;padding:16px 0}
   .flow-line{width:2px;height:36px}
-  .flow-line-a{background:linear-gradient(180deg,rgba(255,175,0,.55),rgba(0,175,175,.55))}
   .flow-pkt{left:50%;top:-6px;transform:translateX(-50%);animation-name:packetV}
 }
 @keyframes packetV{0%{top:-6px;opacity:0}12%{opacity:1}88%{opacity:1}100%{top:100%;opacity:0}}
@@ -208,7 +207,7 @@ h1,h2,h3,.faq-q,.btn-amber,.btn-out,.fl,.nl,.lc{text-transform:lowercase}
           <div class="flow-line flow-line-a">
             <span class="flow-pkt" style="background:#FFAF00;box-shadow:0 0 8px #FFAF00"></span>
             <span class="flow-pkt" style="background:#FFAF00;box-shadow:0 0 8px #FFAF00;animation-delay:.73s"></span>
-            <span class="flow-pkt" style="background:#00AFAF;box-shadow:0 0 8px #00AFAF;animation-delay:1.46s"></span>
+            <span class="flow-pkt" style="background:#FFAF00;box-shadow:0 0 8px #FFAF00;animation-delay:1.46s"></span>
           </div>
           <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6C6E76;margin-top:9px;white-space:nowrap">VLESS / WS / TLS</div>
         </div>
