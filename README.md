@@ -97,15 +97,12 @@ the IP layer — no per-app cooperation, nothing to bypass. It reuses the exact 
   existing SOCKS5 client on loopback. So the server and protocol are unchanged.
 - **Crash-safe routing:** we never edit your real default route. We add two `/1` routes bound
   to the `utun` (they out-specific the default, and the kernel deletes them the instant the
-  interface disappears) plus a host route for the **server's own IP** via your real gateway (so
-  the tunnel's own packets don't loop). If the helper dies for *any* reason, networking
-  self-heals.
-- **No leaks:** while the tunnel is up, DNS is pointed at a public resolver that routes *through*
-  the tunnel (so the local network can't see your lookups), and **IPv6 is disabled** on the
-  interface (the TUN is v4-only, so v6 would otherwise bypass it). Both are restored on teardown.
+  interface disappears), a host route for the **server's own IP** via your real gateway (so the
+  tunnel's own packets don't loop), and host routes for any **public DNS** servers (so name
+  resolution keeps working). If the helper dies for *any* reason, networking self-heals.
 - **One admin prompt** (a macOS GUI dialog) starts a small root session that owns the helper and
-  **watches this app's PID** — if the app exits or crashes, it tears everything down (routes,
-  DNS, IPv6). Turning it off just touches a file (no second prompt).
+  **watches this app's PID** — if the app exits or crashes, it tears everything down. Turning it
+  off just touches a file (no second prompt).
 
 **TCP + UDP both work** through the tunnel (VLESS UDP over the same WebSocket), so QUIC/HTTP-3,
 games (Roblox etc.), and DNS route through your VM — not just TCP. **Limits (v1):** macOS +

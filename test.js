@@ -267,7 +267,7 @@ test("TUN: platform asset name + pinned download URL", () => {
   assert.match(assetUrl(), /tun2socks\/releases\/download\/v2\.7\.0\/tun2socks-\w+-\w+\.zip$/);
 });
 
-test("TUN: isPrivateIp / parsePublicDns classify resolvers correctly", () => {
+test("TUN: only public DNS resolvers get host-routed (LAN stays on the subnet route)", () => {
   assert.ok(isPrivateIp("192.168.1.1"));
   assert.ok(isPrivateIp("10.0.0.5"));
   assert.ok(isPrivateIp("172.20.9.9"));
