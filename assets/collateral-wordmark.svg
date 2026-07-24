@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 80" width="440" height="80" role="img" aria-label="collateral">
+  
+  <g transform="translate(8,8)">
+    <path d="M24 11 H13 V53 H24" fill="none" stroke="#227E83" stroke-width="5"></path>
+    <path d="M40 11 H51 V53 H40" fill="none" stroke="#227E83" stroke-width="5"></path>
+    <circle cx="32" cy="32" r="6.5" fill="#E0912F"></circle>
+  </g>
+  <text x="88" y="54" font-family="&#39;JetBrains Mono&#39;, ui-monospace, monospace" font-weight="500" font-size="40" letter-spacing="1" fill="#E7EAED">collateral<tspan fill="#E0912F">_</tspan></text>
+</svg>

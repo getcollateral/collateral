@@ -1,0 +1,32 @@
+# Deploy config for the Collateral reflector Worker.
+#
+# ⚠️  Read first: a proxy on Workers violates Cloudflare ToS §2.2.1(j) and is
+#     actively fingerprinted/blocked. Deploy ONLY onto a throwaway account that
+#     hosts nothing you can't afford to lose. This is a bootstrap transport.
+#
+# Deploy (from this worker/ directory):
+#   npx wrangler login                 # or CLOUDFLARE_API_TOKEN=<scoped token>
+#   npx wrangler secret put USER_UUID  # paste the per-user UUID the client holds
+#   npx wrangler deploy                # bundles ../common/*.js automatically
+#
+# workers.dev is DNS-blocked in Iran/China — bind a custom domain for real use
+# (needs zone permissions the minimal onboarding token deliberately omits).
+
+name = "collateral-reflector"
+main = "_worker.js"
+compatibility_date = "2025-01-01"
+
+# connect() (outbound TCP sockets) is available on Free and Paid tiers.
+# No KV is required; USER_UUID is provided as a secret (see above).
+#
+# Optional: reach Cloudflare-fronted sites (Discord, many CDNs) via NAT64. The
+# default gateway is a public third-party service — override it here with your own,
+# or a ProxyIP you control. Only /96 prefixes ending in "::" are supported.
+# [vars]
+# NAT64_PREFIX = "2602:fc59:b0:64::"
+#
+# After changing worker code (e.g. the NAT64 update), re-run `npx wrangler deploy`.
+
+# [[routes]]                          # uncomment for a custom domain
+# pattern = "cdn.your-domain.example/*"
+# custom_domain = true

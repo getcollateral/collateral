@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Collateral">
+  <rect width="64" height="64" rx="14" fill="#0E1114"></rect>
+  <g transform="translate(32,32) scale(0.86) translate(-32,-32)">
+  <path d="M24 11 H13 V53 H24" fill="none" stroke="#227E83" stroke-width="5"></path>
+  <path d="M40 11 H51 V53 H40" fill="none" stroke="#227E83" stroke-width="5"></path>
+    <circle cx="32" cy="32" r="6.5" fill="#E0912F"></circle>
+  </g>
+</svg>

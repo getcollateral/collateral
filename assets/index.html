@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Collateral — logo assets</title>
+<link rel="icon" href="collateral-favicon.svg">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  html,body{margin:0;background:#0E1114;color:#E7EAED;font-family:'JetBrains Mono',ui-monospace,monospace;}
+  a{color:#E0912F;}
+  .wrap{padding:48px;max-width:1080px;margin:0 auto;}
+  .kick{font-size:12px;letter-spacing:.18em;color:#E0912F;}
+  .lede{font-size:13px;line-height:1.6;color:#8B949E;margin:6px 0 32px;max-width:760px;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:20px;}
+  .card{border:1px solid #2A313A;background:#14181D;display:flex;flex-direction:column;}
+  .card.light .stage{background:#E7EAED;}
+  .stage{background:#0E1114;padding:32px;display:flex;align-items:center;justify-content:center;min-height:150px;}
+  .meta{padding:12px 16px;border-top:1px solid #2A313A;display:flex;flex-direction:column;gap:2px;}
+  .name{font-size:12px;font-weight:700;letter-spacing:.06em;}
+  .file{font-size:11px;color:#8B949E;}
+  .wide{grid-column:1/-1;}
+  .row{display:flex;gap:14px;align-items:center;flex-wrap:wrap;}
+  .sec{font-size:11px;letter-spacing:.1em;color:#8B949E;margin:36px 0 14px;border-top:1px solid #2A313A;padding-top:18px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kick">COLLATERAL // FINAL ASSETS — 5b ENCAPSULATED</div>
+  <div class="lede">Nine standalone SVGs. Glyph is teal wrapper <code>[&nbsp;]</code> + amber payload; wordmark set in JetBrains&nbsp;Mono&nbsp;Medium (text is live — outline it in production if the font isn't guaranteed). All scale cleanly and carry a transparent background unless noted.</div>
+
+  <div class="sec">GLYPH</div>
+  <div class="grid">
+    <div class="card"><div class="stage"><img src="collateral-glyph.svg" width="96" height="96" alt=""></div><div class="meta"><span class="name">Primary</span><span class="file">collateral-glyph.svg</span></div></div>
+    <div class="card"><div class="stage"><img src="collateral-glyph-amber.svg" width="96" height="96" alt=""></div><div class="meta"><span class="name">1-color amber</span><span class="file">collateral-glyph-amber.svg</span></div></div>
+    <div class="card"><div class="stage"><img src="collateral-glyph-mono-light.svg" width="96" height="96" alt=""></div><div class="meta"><span class="name">Mono light</span><span class="file">collateral-glyph-mono-light.svg</span></div></div>
+    <div class="card light"><div class="stage"><img src="collateral-glyph-mono-dark.svg" width="96" height="96" alt=""></div><div class="meta"><span class="name">Mono dark</span><span class="file">collateral-glyph-mono-dark.svg</span></div></div>
+  </div>
+
+  <div class="sec">ICON / FAVICON</div>
+  <div class="grid">
+    <div class="card"><div class="stage"><img src="collateral-app-icon.svg" width="112" height="112" alt=""></div><div class="meta"><span class="name">App icon</span><span class="file">collateral-app-icon.svg</span></div></div>
+    <div class="card"><div class="stage"><div class="row"><img src="collateral-favicon.svg" width="64" height="64" alt=""><img src="collateral-favicon.svg" width="32" height="32" alt=""><img src="collateral-favicon.svg" width="16" height="16" alt=""></div></div><div class="meta"><span class="name">Favicon · 64 / 32 / 16</span><span class="file">collateral-favicon.svg</span></div></div>
+  </div>
+
+  <div class="sec">WORDMARK</div>
+  <div class="grid">
+    <div class="card wide"><div class="stage" style="justify-content:flex-start;"><img src="collateral-wordmark.svg" height="64" alt=""></div><div class="meta"><span class="name">Primary lockup</span><span class="file">collateral-wordmark.svg</span></div></div>
+    <div class="card wide"><div class="stage" style="padding:0;justify-content:flex-start;"><img src="collateral-wordmark-on-dark.svg" width="480" alt=""></div><div class="meta"><span class="name">On dark ground (padded)</span><span class="file">collateral-wordmark-on-dark.svg</span></div></div>
+    <div class="card wide light"><div class="stage" style="justify-content:flex-start;"><img src="collateral-wordmark-mono-dark.svg" height="64" alt=""></div><div class="meta"><span class="name">Mono dark (for light grounds)</span><span class="file">collateral-wordmark-mono-dark.svg</span></div></div>
+  </div>
+</div>
+</body>
+</html>
