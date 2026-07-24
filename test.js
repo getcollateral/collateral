@@ -12,6 +12,8 @@ import {
   ipv6ToBytes,
 } from "./common/vless.js";
 import { parseSocksUdp } from "./client.js";
+import { qrMatrix } from "./common/qr.js";
+import { vlessUriFromConfig } from "./common/config.js";
 import { FrameParser, encodeFrame, OPCODES } from "./common/ws-frame.js";
 import { isIPv4Literal, isCloudflareV4, nat64Address, normalizeNat64Prefix } from "./common/nat64.js";
 import { renderFrame, hitTest } from "./tui.js";
@@ -196,6 +198,37 @@ test("TUI: connected frame shows the proxy address and worker", () => {
   assert.match(f, /c {2}disconnect/);
   assert.match(f, /wss:\/\/x\.workers\.dev/);
   assert.match(f, /1\.2\.3\.4/);
+});
+
+test("QR: correct size + valid finder patterns at all three corners", () => {
+  const m = qrMatrix("HELLO WORLD", "M");
+  assert.equal(m.length, 21);            // version 1
+  assert.equal(m[0].length, 21);
+  const finderOk = (ox, oy) => {
+    for (let y = 0; y < 7; y++) for (let x = 0; x < 7; x++) {
+      const want = x === 0 || x === 6 || y === 0 || y === 6 || (x >= 2 && x <= 4 && y >= 2 && y <= 4);
+      if (!!m[oy + y][ox + x] !== want) return false;
+    }
+    return true;
+  };
+  assert.ok(finderOk(0, 0));             // top-left
+  assert.ok(finderOk(14, 0));            // top-right
+  assert.ok(finderOk(0, 14));            // bottom-left
+});
+
+test("QR: scales version to the payload and stays square (multi-block)", () => {
+  const m = qrMatrix("a".repeat(200), "L");
+  assert.equal(m.length, 53);            // version 9
+  assert.equal(m.length, m[0].length);
+});
+
+test("config: vlessUriFromConfig builds an importable vless:// link", () => {
+  const uri = vlessUriFromConfig({ workerUrl: "wss://1.2.3.4.sslip.io/abc123", uuid: "745282aa-88d3-476d-87aa-9cecee72177c" });
+  assert.match(uri, /^vless:\/\/745282aa-88d3-476d-87aa-9cecee72177c@1\.2\.3\.4\.sslip\.io:443\?/);
+  assert.match(uri, /type=ws/);
+  assert.match(uri, /security=tls/);
+  assert.match(uri, /sni=1\.2\.3\.4\.sslip\.io/);
+  assert.match(uri, /path=%2Fabc123/);
 });
 
 test("TUI: help view renders proxy instructions", () => {

@@ -20,6 +20,8 @@ import { deployToAccount } from "./provision/deploy.js";
 import { provisionVps } from "./provision/vps.js";
 import { setSocks, socksEnabled, primaryService, supported as sysproxySupported } from "./common/sysproxy.js";
 import * as tun from "./common/tun.js";
+import { qrToTerminal } from "./common/qr.js";
+import { vlessUriFromConfig } from "./common/config.js";
 
 const VPS_STEPS = [
   ["connect", "Connect to your VM over SSH"],
@@ -219,7 +221,7 @@ function buildBox(s) {
     [["u", "set access key"], ["g", "generate new key"]],
     [["k", "cloudflare token link"], ["p", "proxy setup help"]],
     [["d", `system proxy: ${dw}`], ["f", `full tunnel: ${tw}`]],
-    [["q", "quit"]],
+    [["x", "share config (QR)"], ["q", "quit"]],
   ];
   for (const [l, r] of menu) {
     const i = body.length;
@@ -262,11 +264,13 @@ export function hitTest(built, cols, rows, X, Y) {
 function draw() {
   if (!process.stdout.isTTY) { w(renderFrame(state) + "\n"); return; }
   const cols = process.stdout.columns || 80, rows = process.stdout.rows || 24;
-  lastBuilt = buildBox(state);
-  const box = lastBuilt.lines;
+  let box;
+  if (state.view === "share") { box = buildShare(state); lastBuilt = null; }
+  else { lastBuilt = buildBox(state); box = lastBuilt.lines; }
   const boxW = Math.max(...box.map(visLen));
   const left = " ".repeat(Math.max(0, Math.floor((cols - boxW) / 2)));
-  const top = Math.max(0, Math.floor((rows - box.length) / 2));
+  // Top-align if the content is taller than the screen (the QR must not be clipped at the top).
+  const top = box.length >= rows ? 0 : Math.max(0, Math.floor((rows - box.length) / 2));
   let out = "\x1b[H";
   for (let r = 0; r < rows; r++) {
     out += "\x1b[2K";
@@ -274,6 +278,32 @@ function draw() {
     if (r < rows - 1) out += "\r\n";
   }
   w(out);
+}
+
+// The share view: a scannable QR of the vless:// config + the link, so a new user can import
+// the whole endpoint in one scan/paste — no SSH, no first-time setup.
+function buildShare(s) {
+  const cols = process.stdout.columns || 80;
+  const uri = s.shareUri || "";
+  // Back-hint lives in the title so it's visible even if the QR is taller than the terminal.
+  const lines = [`${markStr(s)} ${A.bold}collateral${A.reset}  ${A.dim}share this config · press any key to go back${A.reset}`, ``];
+  for (const q of qrToTerminal(uri, { ecl: "L", quiet: 2 }).replace(/\n$/, "").split("\n")) lines.push(q);
+  lines.push(``);
+  for (const l of wrapAnsi(`${A.teal}${uri}${A.reset}`, Math.min(cols - 4, 72))) lines.push(l);
+  lines.push(``,
+    `${A.dim}Scan with a VLESS app (v2rayNG · Streisand · Shadowrocket · sing-box), or copy the link.${A.reset}`,
+    `${A.red}Anyone with this link can use your server.${A.reset}`);
+  return lines;
+}
+
+function shareConfig() {
+  if (!isWsUrl(state.workerUrl) || !isUuid(state.uuid)) {
+    return setMsg(A.red + "Nothing to share yet — set a worker + key, or run setup (s)." + A.reset);
+  }
+  try { state.shareUri = vlessUriFromConfig({ workerUrl: state.workerUrl, uuid: state.uuid }); }
+  catch (e) { return setMsg(A.red + `Couldn't build the share link: ${e.message || e}` + A.reset); }
+  state.view = "share";
+  draw();
 }
 function setMsg(m) { state.msg = m; draw(); }
 
@@ -587,6 +617,7 @@ async function handleKey(k) {
     case "s": return chooseSetup();
     case "d": return toggleSystemProxy();
     case "f": return toggleTun();
+    case "x": return shareConfig();
     case "c": return state.connected ? disconnect() : connect();
     case "t": return test();
     case "g": return regenKey();
@@ -631,7 +662,7 @@ function keyHandler(str) {
   const k = str.length === 1 ? str.toLowerCase() : "";
   if (k === "q") return quit();                 // quit works even mid-connect/deploy
   if (!k) { if (events.length) return; return draw(); } // no key: mouse-only chunk, or re-sync
-  if (state.view === "help") { state.view = "main"; return draw(); }
+  if (state.view === "help" || state.view === "share") { state.view = "main"; return draw(); }
   if (state.busy) return;
   handleKey(k);
 }
@@ -641,7 +672,7 @@ function hitAt(X, Y) {
 }
 
 function onClick(X, Y) {
-  if (state.view === "help") { state.view = "main"; return draw(); }
+  if (state.view === "help" || state.view === "share") { state.view = "main"; return draw(); }
   if (state.busy) return;
   const key = hitAt(X, Y);
   if (key) handleKey(key);
