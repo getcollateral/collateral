@@ -1,7 +1,6 @@
-// Minimal RFC 6455 WebSocket framing for the server (Worker-shim) side.
-// The Cloudflare Worker uses the runtime's native WebSocket; this exists only so
-// the local Node shim can speak WebSocket with zero dependencies. Node-only
-// (uses Buffer + node:crypto). Handles binary/text/close/ping and fragmentation.
+// Minimal RFC 6455 WebSocket framing for the server side. Exists so the Node
+// server can speak WebSocket with zero dependencies. Node-only (uses Buffer +
+// node:crypto). Handles binary/text/close/ping and fragmentation.
 
 import crypto from "node:crypto";
 

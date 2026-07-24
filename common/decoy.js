@@ -1,7 +1,7 @@
 // Active-probing resistance: any request that isn't an authenticated WebSocket
 // upgrade gets a plausible, boring web page instead of a proxy-shaped reply.
 // A censor probing the endpoint sees an ordinary site and has nothing to blacklist.
-// Pure (no runtime deps) so both the Node shim and the Cloudflare Worker share it.
+// Pure (no runtime deps).
 
 export function decoyPage() {
   return `<!doctype html>

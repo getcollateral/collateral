@@ -15,7 +15,6 @@ import { parseSocksUdp } from "./client.js";
 import { qrMatrix } from "./common/qr.js";
 import { vlessUriFromConfig, parseVlessUri } from "./common/config.js";
 import { FrameParser, encodeFrame, OPCODES } from "./common/ws-frame.js";
-import { isIPv4Literal, isCloudflareV4, nat64Address, normalizeNat64Prefix } from "./common/nat64.js";
 import { renderFrame, hitTest } from "./tui.js";
 import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun } from "./common/tun.js";
 import { normalizeDomain } from "./provision/vps.js";
@@ -124,35 +123,6 @@ test("WebSocket frame: a message split across two pushes is reassembled", () => 
   assert.ok(msgs[0].payload.equals(payload));
 });
 
-test("NAT64: address embeds the IPv4 in the last 32 bits (RFC 6052 /96)", () => {
-  assert.equal(nat64Address("1.2.3.4", "2602:fc59:b0:64::"), "2602:fc59:b0:64::0102:0304");
-  assert.equal(nat64Address("104.26.12.205", "2602:fc59:b0:64::"), "2602:fc59:b0:64::681a:0ccd");
-  // callers must NOT get brackets (those are added only for the connect() string form)
-  assert.ok(!nat64Address("1.2.3.4", "2602:fc59:b0:64::").includes("["));
-});
-
-test("NAT64: Cloudflare-fronted destination IPs are detected, others are not", () => {
-  assert.ok(isCloudflareV4("104.26.12.205")); // ipify (104.24.0.0/14)
-  assert.ok(isCloudflareV4("172.67.74.152")); // ipify (172.64.0.0/13)
-  assert.ok(isCloudflareV4("162.159.0.1"));   // 162.158.0.0/15
-  assert.ok(!isCloudflareV4("8.8.8.8"));       // Google
-  assert.ok(!isCloudflareV4("54.239.28.85"));  // AWS
-  assert.ok(!isCloudflareV4("999.1.1.1"));     // invalid
-});
-
-test("NAT64: IPv4 literal validation rejects out-of-range octets", () => {
-  assert.ok(isIPv4Literal("127.0.0.1"));
-  assert.ok(!isIPv4Literal("256.0.0.1"));
-  assert.ok(!isIPv4Literal("1.2.3"));
-  assert.ok(!isIPv4Literal("example.com"));
-});
-
-test("NAT64: only /96 prefixes ending in :: are accepted", () => {
-  assert.equal(normalizeNat64Prefix("2602:fc59:b0:64::"), "2602:fc59:b0:64::");
-  assert.equal(normalizeNat64Prefix("2602:fc59:b0:64"), null);
-  assert.equal(normalizeNat64Prefix(12345), null);
-});
-
 test("TUI: renders a disconnected frame with the menu", () => {
   const f = strip(renderFrame({ view: "main", connected: false, workerUrl: "", uuid: "", msg: "hi" }));
   assert.match(f, /collateral/);
@@ -186,18 +156,18 @@ test("TUI: hovering an item renders a reverse-video highlight bar", () => {
 });
 
 test("TUI: prompt view renders in-box with the typed value", () => {
-  const f = strip(renderFrame({ view: "prompt", prompt: { lines: ["Worker address"], current: "", value: "wss://ex" } }));
+  const f = strip(renderFrame({ view: "prompt", prompt: { lines: ["Server address"], current: "", value: "wss://ex" } }));
   assert.match(f, /collateral/);      // brand header, so it stays in the box
-  assert.match(f, /Worker address/);  // the label
+  assert.match(f, /Server address/);  // the label
   assert.match(f, /wss:\/\/ex/);      // the typed value
   assert.match(f, /esc to cancel/);
 });
 
-test("TUI: connected frame shows the proxy address and worker", () => {
-  const f = strip(renderFrame({ view: "main", connected: true, socksPort: 1080, workerUrl: "wss://x.workers.dev", uuid: "u", exitIP: "1.2.3.4", msg: "" }));
+test("TUI: connected frame shows the proxy address and endpoint", () => {
+  const f = strip(renderFrame({ view: "main", connected: true, socksPort: 1080, workerUrl: "wss://1.2.3.4.sslip.io/abc", uuid: "u", exitIP: "1.2.3.4", msg: "" }));
   assert.match(f, /socks5 {2}127\.0\.0\.1:1080/);
   assert.match(f, /c {2}disconnect/);
-  assert.match(f, /wss:\/\/x\.workers\.dev/);
+  assert.match(f, /wss:\/\/1\.2\.3\.4\.sslip\.io/);
   assert.match(f, /1\.2\.3\.4/);
 });
 
@@ -294,16 +264,16 @@ test("TUN: parses the default gateway/interface and picks a free utun", () => {
   assert.equal(firstFreeUtun("lo0 en0 utun123 utun124"), "utun125");
 });
 
-test("TUI: setup view lists deploy steps with state", () => {
+test("TUI: setup view lists provisioning steps with state", () => {
   const f = strip(renderFrame({
     view: "setup",
     steps: [
-      { name: "verify", label: "Verify token", status: "ok" },
-      { name: "upload", label: "Deploy the worker", status: "run" },
+      { name: "ssh", label: "Connect over SSH", status: "ok" },
+      { name: "upload", label: "Upload the server", status: "run" },
       { name: "health", label: "Health check", status: "pending" },
     ],
   }));
   assert.match(f, /first-time setup/);
-  assert.match(f, /Verify token/);
-  assert.match(f, /Deploy the worker/);
+  assert.match(f, /Connect over SSH/);
+  assert.match(f, /Upload the server/);
 });

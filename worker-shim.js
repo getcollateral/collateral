@@ -1,8 +1,8 @@
-// Worker-shim: a local Node stand-in for the Cloudflare Worker data plane.
-// It runs the SAME VLESS logic (common/vless.js) the deployable worker/_worker.js
-// uses, but against Node's net.connect() instead of cloudflare:sockets connect().
-// This lets you exercise the full packet lifecycle on localhost, no cloud account,
-// no ToS risk.
+// The server data plane: a small Node server that terminates the WebSocket-in-TLS
+// tunnel, speaks VLESS (common/vless.js), and reflects traffic out via net.connect()
+// / dgram. This same file is bundled onto your VM (see provision/vps.js) to run the
+// real endpoint, and is also started locally by run-demo.js to exercise the whole
+// packet lifecycle on localhost.
 //
 //   [ non-WebSocket request ]  -> decoy page          (active-probing resistance)
 //   [ WebSocket + valid UUID ] -> parse VLESS, connect() outbound, bidirectional pipe

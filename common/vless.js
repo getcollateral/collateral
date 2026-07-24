@@ -1,6 +1,6 @@
-// VLESS protocol: a faithful subset, pure (Uint8Array only) so the SAME code
-// runs in Node and in a Cloudflare Worker. VLESS carries no crypto of its own —
-// confidentiality comes entirely from the outer TLS the CDN terminates.
+// VLESS protocol: a faithful subset, pure (Uint8Array only). VLESS carries no
+// crypto of its own — confidentiality comes entirely from the outer TLS that
+// the server (behind Caddy) terminates.
 //
 // Request header (client -> server):
 //   [ver:1][uuid:16][addonLen:1][addons:addonLen][cmd:1][port:2][atype:1][addr:var][payload...]

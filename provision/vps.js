@@ -2,12 +2,12 @@
 // Always-Free instance) and stand up the server automatically — no manual terminal work.
 // This is the "app provisions your server" model (like Outline Manager).
 //
-// It reuses OUR server (worker-shim.js) bundled into one file, puts Caddy in front for
+// It bundles our server (worker-shim.js) into one file, puts Caddy in front for
 // automatic Let's Encrypt HTTPS on a <ip>.sslip.io domain (no domain purchase needed),
 // and runs it behind systemd. Uses the system `ssh` binary, so still zero npm deps.
 //
-// Unlike the Cloudflare Worker: a real VM can reach Cloudflare-fronted sites, do UDP, and
-// has no connection cap — while staying WebSocket-over-TLS on :443 (filter-friendly).
+// A real VM reaches every site, does TCP + UDP, and has no connection cap — while
+// staying WebSocket-over-TLS on :443 (filter-friendly).
 
 import { execFile } from "node:child_process";
 import crypto from "node:crypto";

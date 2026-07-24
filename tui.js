@@ -4,20 +4,17 @@
 //
 //   node tui.js        (or: npm run tui)
 //
-// Controls: c connect/disconnect · t test · w set worker · u set key · g generate
-//           k token link · p proxy help · q quit
+// Controls: c connect/disconnect · t test · w set server · u set key · g generate
+//           p proxy help · q quit
 
 import readline from "node:readline";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
-import { exec } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { startClient } from "./client.js";
 import { getExitIP } from "./common/probe.js";
 import { loadConfig, saveConfig } from "./common/store.js";
-import { buildTokenDeepLink } from "./provision/deeplink.js";
-import { deployToAccount } from "./provision/deploy.js";
 import { provisionVps } from "./provision/vps.js";
 import { setSocks, socksEnabled, primaryService, supported as sysproxySupported } from "./common/sysproxy.js";
 import * as tun from "./common/tun.js";
@@ -33,15 +30,6 @@ const VPS_STEPS = [
   ["tls", "Issue the HTTPS certificate"],
 ];
 
-const SETUP_STEPS = [
-  ["verify", "Verify token"],
-  ["account", "Find your account"],
-  ["subdomain", "Set up workers.dev subdomain"],
-  ["key", "Generate access key"],
-  ["upload", "Deploy the worker"],
-  ["enable", "Enable the endpoint"],
-  ["health", "Health check"],
-];
 
 const A = {
   reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m",
@@ -66,7 +54,7 @@ const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "�
 const SEP = "\x00sep\x00"; // sentinel: a separator row
 const w = (s) => process.stdout.write(s);
 
-const state = { ...loadConfig(), connected: false, reconnecting: false, socksPort: null, exitIP: null, busy: false, busyText: "", view: "main", hover: null, systemProxy: false, tunActive: false, netService: null, msg: "Set your worker + key, then press c to connect." };
+const state = { ...loadConfig(), connected: false, reconnecting: false, socksPort: null, exitIP: null, busy: false, busyText: "", view: "main", hover: null, systemProxy: false, tunActive: false, netService: null, msg: "Set your server + key, then press c to connect." };
 let socks = null, spinI = 0, inPrompt = false, renderTimer = null, lastBuilt = null, quitting = false;
 let healthTimer = null, healthFails = 0;
 const HEALTH_OK_MS = Number(process.env.COLLATERAL_HEALTH_MS) || 30000; // healthy poll interval (test knob)
@@ -164,8 +152,8 @@ function buildBox(s) {
       `${A.muted}device-wide${A.reset} (d)  flips the macOS system proxy;`,
       `             Apple treats it as best-effort.`,
       `${A.muted}curl${A.reset}         curl --socks5-hostname 127.0.0.1:${port} …`, ``,
-      `${A.dim}Cloudflare-hosted sites (Discord, ChatGPT) need${A.reset}`,
-      `${A.dim}a relay you control — see the README.${A.reset}`, SEP,
+      `${A.dim}Your VM reaches every site directly — nothing to${A.reset}`,
+      `${A.dim}configure per site.${A.reset}`, SEP,
       `${A.dim}press any key or click to go back${A.reset}`,
     );
     return finish();
@@ -225,12 +213,11 @@ function buildBox(s) {
   const tw = s.tunActive ? `${A.green}on${A.reset}` : `${A.muted}off${A.reset}`;
   const menu = [
     [["s", `${A.bold}first-time setup${A.reset}`], ["c", s.connected ? "disconnect" : "connect"]],
-    [["t", "test connection"], ["w", "set worker address"]],
+    [["t", "test connection"], ["w", "set server address"]],
     [["u", "set access key"], ["g", "generate new key"]],
-    [["k", "cloudflare token link"], ["p", "proxy setup help"]],
     [["d", `system proxy: ${dw}`], ["f", `full tunnel: ${tw}`]],
     [["x", "share config (QR)"], ["i", "import (scan QR)"]],
-    [["q", "quit"]],
+    [["p", "proxy setup help"], ["q", "quit"]],
   ];
   for (const [l, r] of menu) {
     const i = body.length;
@@ -330,7 +317,7 @@ function buildShare(s) {
 
 function shareConfig() {
   if (!isWsUrl(state.workerUrl) || !isUuid(state.uuid)) {
-    return setMsg(A.red + "Nothing to share yet — set a worker + key, or run setup (s)." + A.reset);
+    return setMsg(A.red + "Nothing to share yet — set a server + key, or run setup (s)." + A.reset);
   }
   try { state.shareUri = vlessUriFromConfig({ workerUrl: state.workerUrl, uuid: state.uuid }); }
   catch (e) { return setMsg(A.red + `Couldn't build the share link: ${e.message || e}` + A.reset); }
@@ -367,7 +354,7 @@ function startSocks(workerUrl, uuid, port) {
 }
 
 async function connect() {
-  if (!isWsUrl(state.workerUrl)) return setMsg(A.red + "Set a worker address first (wss://…) — press w." + A.reset);
+  if (!isWsUrl(state.workerUrl)) return setMsg(A.red + "Set a server address first (wss://…) — press w." + A.reset);
   if (!isUuid(state.uuid)) return setMsg(A.red + "Set a valid access key first — press u or g." + A.reset);
   state.busy = true; state.busyText = "connecting…"; draw();
   try {
@@ -384,7 +371,7 @@ async function connect() {
     if (socks) { try { socks.close(); } catch {} }
     socks = null; state.socksPort = null; state.connected = false; state.exitIP = null;
     state.busy = false;
-    setMsg(A.red + `Couldn't establish the tunnel: ${e.message || e}. Check the worker is deployed and the key matches.` + A.reset);
+    setMsg(A.red + `Couldn't establish the tunnel: ${e.message || e}. Check the server is set up and the key matches.` + A.reset);
   }
 }
 
@@ -503,7 +490,7 @@ async function test() {
 }
 
 // Generating a new key orphans the current one: the server keeps expecting the OLD key until
-// you redeploy. That's easy to trigger by accident and locks you out, so require a confirm.
+// you re-run setup. That's easy to trigger by accident and locks you out, so require a confirm.
 async function regenKey() {
   const ok = await confirmWord([
     `${A.amber}${A.bold}Generate a new access key?${A.reset}`,
@@ -511,18 +498,13 @@ async function regenKey() {
     `current key  ${A.dim}${state.uuid ? ellip(state.uuid, 40) : "(none)"}${A.reset}`,
     ``,
     `This ${A.bold}replaces${A.reset} your key. Your server still expects the current one, so you'll`,
-    `${A.bold}lose access until you redeploy${A.reset} (press ${A.amber}s${A.reset}) — which now uploads the new key.`,
+    `${A.bold}lose access until you re-run setup${A.reset} (press ${A.amber}s${A.reset}), which uploads the new key.`,
     ``,
     `Type ${A.amber}yes${A.reset} to generate a new key, or press enter to cancel.`,
   ], "yes");
   if (!ok) { draw(); return setMsg("Kept your current key."); }
   state.uuid = crypto.randomUUID(); saveConfig({ uuid: state.uuid });
-  setMsg(A.green + "New key generated." + A.reset + ` ${A.dim}Press s → redeploy to upload it to your server.${A.reset}`);
-}
-
-function openUrl(u) {
-  const cmd = process.platform === "darwin" ? `open "${u}"` : process.platform === "win32" ? `start "" "${u}"` : `xdg-open "${u}"`;
-  exec(cmd, () => {});
+  setMsg(A.green + "New key generated." + A.reset + ` ${A.dim}Press s → re-run setup to upload it to your server.${A.reset}`);
 }
 
 // In-box prompt: renders as a centered box view (state.view = "prompt") and reads input in
@@ -562,27 +544,9 @@ function promptLine(label, current) {
   if (current) lines.push(`${A.dim}current: ${ellip(current, 60)}${A.reset}`);
   return promptStart(lines, current);
 }
-function askLines(lines) { return promptStart(lines, ""); }
 async function confirmWord(lines, word) { return (await promptStart(lines, "")).toLowerCase() === word; }
 
-// The `s` key: pick where the server lives. VPS is the real path; Cloudflare is the demo.
-async function chooseSetup() {
-  const c = await askLines([
-    `${A.amber}${A.bold}First-time setup${A.reset} — where should your server run?`,
-    ``,
-    `  ${A.amber}1${A.reset}  ${A.bold}Your own VM${A.reset} (Oracle Cloud free tier) — recommended`,
-    `     ${A.dim}reaches every site, no connection cap, no ToS problems${A.reset}`,
-    ``,
-    `  ${A.amber}2${A.reset}  Cloudflare Workers`,
-    `     ${A.dim}quick demo, but can't reach Cloudflare sites, no UDP, ToS-risky${A.reset}`,
-    ``,
-    `Type ${A.amber}1${A.reset} or ${A.amber}2${A.reset} (or enter to cancel).`,
-  ]);
-  if (c === "1") return setupVps();
-  if (c === "2") return setup();
-  draw(); return setMsg("Setup cancelled.");
-}
-
+// The `s` key: SSH into your own VM and stand up the server automatically.
 async function setupVps() {
   const ok = await confirmWord([
     `${A.amber}${A.bold}Set up your own server${A.reset}`,
@@ -643,64 +607,10 @@ async function setupVps() {
   }
 }
 
-async function setup() {
-  const ok = await confirmWord([
-    `${A.amber}${A.bold}First-time setup${A.reset} — deploy your own private endpoint.`,
-    ``,
-    `This deploys a proxy Worker to ${A.bold}your own${A.reset} Cloudflare account.`,
-    ``,
-    `${A.red}⚠  Cloudflare's Terms (§2.2.1(j)) prohibit running a proxy and can`,
-    `   ban the account — including any other sites/domains on it.${A.reset}`,
-    ``,
-    `${A.bold}Use a throwaway Cloudflare account that hosts nothing else.${A.reset}`,
-    `You'll paste one scoped API token (opened in your browser next).`,
-    ``,
-    `Type ${A.amber}yes${A.reset} to continue, or press enter to cancel.`,
-  ], "yes");
-  if (!ok) { draw(); return setMsg("Setup cancelled."); }
-
-  openUrl(buildTokenDeepLink());
-  const token = await promptLine("Paste your Cloudflare API token (the page just opened in your browser)", "");
-  if (!token) { draw(); return setMsg("Setup cancelled — no token entered."); }
-
-  state.view = "setup";
-  state.steps = SETUP_STEPS.map(([name, label]) => ({ name, label, status: "pending" }));
-  state.busy = true; draw();
-  try {
-    const res = await deployToAccount({
-      token,
-      existingUuid: state.uuid,
-      onStep: (name, status, note) => {
-        const st = state.steps.find((x) => x.name === name);
-        if (st) { st.status = status; if (note) st.note = note; }
-        draw();
-      },
-    });
-    state.busy = false;
-    state.workerUrl = res.workerUrl; state.uuid = res.uuid;
-    saveConfig({ workerUrl: res.workerUrl, uuid: res.uuid });
-    state.view = "main";
-    setMsg(A.green + `Deployed to ${res.account}. Connecting…` + A.reset);
-    await connect();
-  } catch (e) {
-    state.busy = false;
-    const running = (state.steps || []).find((x) => x.status === "run");
-    if (running) running.status = "fail";
-    const msg = String(e.message || e);
-    const hint = /1101|blocked|proxy|10202/i.test(msg)
-      ? " — Cloudflare may be blocking proxy code (the ToS risk). Try a fresh account, or the self-host path."
-      : /verify|active|9109|1000/i.test(msg)
-      ? " — check the token was created from the link with Workers Scripts:Edit + Account Settings:Read."
-      : "";
-    state.view = "main";
-    setMsg(A.red + `Setup failed: ${msg}${hint}` + A.reset);
-  }
-}
-
 async function handleKey(k) {
   switch (k) {
     case "q": return quit();
-    case "s": return chooseSetup();
+    case "s": return setupVps();
     case "d": return toggleSystemProxy();
     case "f": return toggleTun();
     case "x": return shareConfig();
@@ -708,14 +618,11 @@ async function handleKey(k) {
     case "c": return state.connected ? disconnect() : connect();
     case "t": return test();
     case "g": return regenKey();
-    case "k":
-      openUrl(buildTokenDeepLink());
-      return setMsg("Opened the Cloudflare token page in your browser.");
     case "p": state.view = "help"; return draw();
     case "w": {
-      const v = await promptLine("Worker address (wss://your-worker.workers.dev)", state.workerUrl);
+      const v = await promptLine("Server address (wss://your-domain or wss://<ip>.sslip.io)", state.workerUrl);
       state.workerUrl = v || ""; saveConfig({ workerUrl: state.workerUrl });
-      return setMsg(state.workerUrl ? "Saved worker address." : "Cleared worker address.");
+      return setMsg(state.workerUrl ? "Saved server address." : "Cleared server address.");
     }
     case "u": {
       const v = await promptLine("Access key (UUID) — paste it", state.uuid);
@@ -747,7 +654,7 @@ function keyHandler(str) {
     str = str.replace(/\x1b\[<\d+;\d+;\d+[Mm]/g, ""); // strip mouse; fall through for a trailing key
   }
   const k = str.length === 1 ? str.toLowerCase() : "";
-  if (k === "q") return quit();                 // quit works even mid-connect/deploy
+  if (k === "q") return quit();                 // quit works even mid-connect/setup
   if (!k) { if (events.length) return; return draw(); } // no key: mouse-only chunk, or re-sync
   if (state.view === "help" || state.view === "share") { state.view = "main"; return draw(); }
   if (state.busy) return;

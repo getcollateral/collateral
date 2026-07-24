@@ -67,12 +67,11 @@ working.
   │ transport  VLESS · WebSocket · TLS · :443         │
   ├──────────────────────────────────────────────────┤
   │ s  first-time setup      c  disconnect            │
-  │ t  test connection       w  set worker address    │
+  │ t  test connection       w  set server address    │
   │ u  set access key        g  generate new key      │
-  │ k  cloudflare token link p  proxy setup help      │
   │ d  system proxy: off     f  full tunnel: off      │
-  │ x  share config (QR)     i  import (scan QR)       │
-  │ q  quit                                           │
+  │ x  share config (QR)     i  import (scan QR)      │
+  │ p  proxy setup help      q  quit                  │
   ├──────────────────────────────────────────────────┤
   │ › Connected — traffic exits via 161.33.237.170.   │
   ╰──────────────────────────────────────────────────╯

@@ -17,7 +17,6 @@ import { exec } from "node:child_process";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { startClient } from "./client.js";
-import { buildTokenDeepLink, FALLBACK_URL } from "./provision/deeplink.js";
 
 // Store config in the user's home dir, not next to the script — a packaged .app
 // bundle is read-only.
@@ -54,7 +53,7 @@ function startSocks(workerUrl, uuid, port) {
 
 async function connect() {
   if (socks) return statusPayload();
-  if (!isWsUrl(config.workerUrl)) throw new Error("Enter a valid worker address starting with wss:// (or ws://).");
+  if (!isWsUrl(config.workerUrl)) throw new Error("Enter a valid server address starting with wss:// (or ws://).");
   if (!isUuid(config.uuid)) throw new Error("Enter a valid UUID (or click Generate).");
   try {
     socks = await startSocks(config.workerUrl, config.uuid, 1080);
@@ -72,8 +71,8 @@ function disconnect() {
   return statusPayload();
 }
 
-// Dial through the running SOCKS proxy to a non-Cloudflare echo service and read the
-// exit IP, proving traffic really leaves via the worker.
+// Dial through the running SOCKS proxy to an echo service and read the
+// exit IP, proving traffic really leaves via your server.
 function getExitIP() {
   return new Promise((resolve, reject) => {
     if (!socks) return reject(new Error("Not connected."));
@@ -119,7 +118,6 @@ async function handleApi(req, res, url) {
   const m = req.method;
   if (m === "GET" && url.pathname === "/api/status") return sendJSON(res, 200, statusPayload());
   if (m === "POST" && url.pathname === "/api/generate-uuid") return sendJSON(res, 200, { uuid: crypto.randomUUID() });
-  if (m === "GET" && url.pathname === "/api/deeplink") return sendJSON(res, 200, { url: buildTokenDeepLink(), fallback: FALLBACK_URL });
   if (m === "POST" && url.pathname === "/api/config") {
     const b = await readBody(req);
     saveConfig({ workerUrl: (b.workerUrl || "").trim(), uuid: (b.uuid || "").trim() });
@@ -239,14 +237,13 @@ function page() {
 
   <div class="card">
     <h2>Your endpoint</h2>
-    <label for="workerUrl">Worker address</label>
-    <div class="row"><input id="workerUrl" placeholder="wss://collateral-reflector.you.workers.dev" autocomplete="off" spellcheck="false"></div>
+    <label for="workerUrl">Server address</label>
+    <div class="row"><input id="workerUrl" placeholder="wss://your-domain or wss://<ip>.sslip.io" autocomplete="off" spellcheck="false"></div>
     <label for="uuid">Access key (UUID)</label>
     <div class="row">
       <input id="uuid" placeholder="paste, or generate" autocomplete="off" spellcheck="false">
       <button id="gen" class="ghost">Generate</button>
     </div>
-    <div class="row"><button id="token" class="ghost" style="width:100%">Open Cloudflare token page…</button></div>
     <button id="connect" class="connect">Connect</button>
   </div>
 
@@ -264,10 +261,10 @@ function page() {
       <li><b>Firefox:</b> Settings → Network Settings → Manual proxy → SOCKS v5 host <code id="ph1">127.0.0.1</code>, port <code id="pp1">1080</code>, and tick “Proxy DNS when using SOCKS v5”.</li>
       <li><b>macOS (all apps):</b> System Settings → Network → your Wi‑Fi → Details → Proxies → SOCKS, host <code>127.0.0.1</code> port <code id="pp2">1080</code>.</li>
     </ol>
-    <div class="hintbox" style="margin-top:12px">Most big sites (Google, YouTube, Instagram, Reddit) work now. Cloudflare‑hosted sites (Discord, ChatGPT) need a relay you control — see the README.</div>
+    <div class="hintbox" style="margin-top:12px">Your VM reaches every site directly — no per‑site setup.</div>
   </div>
 
-  <div class="foot">Running locally on your machine · <b>throwaway Cloudflare account only</b></div>
+  <div class="foot">Running locally on your machine · your traffic exits via <b>your own VM</b></div>
   <div style="text-align:center;margin-top:10px"><button id="quit" class="ghost">Quit Collateral</button></div>
 </div>
 <div id="toast"></div>
@@ -299,8 +296,7 @@ function render(s){
   if (s.uuid && !document.activeElement.matches("#uuid")) $("uuid").value = s.uuid;
 }
 
-$("gen").onclick = async () => { const {uuid} = await api("/api/generate-uuid","POST"); $("uuid").value = uuid; toast("New access key generated — deploy it as USER_UUID on the worker."); };
-$("token").onclick = async () => { const {url} = await api("/api/deeplink"); window.open(url, "_blank"); };
+$("gen").onclick = async () => { const {uuid} = await api("/api/generate-uuid","POST"); $("uuid").value = uuid; toast("New access key generated — re-run setup to upload it to your server."); };
 $("connect").onclick = async () => {
   const btn=$("connect"); const wasOn = btn.classList.contains("on");
   btn.disabled = true; $("pill").className="pill busy"; $("pillText").textContent = wasOn?"Disconnecting…":"Connecting…";

@@ -16,9 +16,8 @@
     "ui": "node ui-server.js",
     "demo": "node run-demo.js",
     "test": "node --test",
-    "worker": "node worker-shim.js",
-    "client": "node client.js",
-    "provision": "node provision/provision.js"
+    "server": "node worker-shim.js",
+    "client": "node client.js"
   },
   "keywords": [
     "tunnel",
