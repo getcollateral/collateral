@@ -284,12 +284,27 @@ function draw() {
 
 // The share view: a scannable QR of the vless:// config + the link, so a new user can import
 // the whole endpoint in one scan/paste — no SSH, no first-time setup.
+// Warn if the terminal can't render a scannable QR. It needs: color (black/white contrast, or
+// it won't scan), a UTF-8 locale (the block glyphs), and enough width. Returns a message or null.
+function qrTerminalWarning(qrWidth, cols) {
+  const issues = [];
+  if (typeof process.stdout.hasColors === "function" && !process.stdout.hasColors()) issues.push("no color support");
+  const loc = (process.env.LC_ALL || process.env.LC_CTYPE || process.env.LANG || "").toLowerCase();
+  if (process.platform !== "darwin" && loc && !/utf-?8/.test(loc)) issues.push("non-UTF-8 locale");
+  if (qrWidth > cols) issues.push(`too narrow (QR needs ${qrWidth} cols, you have ${cols})`);
+  if (!issues.length) return null;
+  return `⚠ this terminal may not render the QR (${issues.join("; ")}) — copy the link below instead, or open in a wider UTF-8 color terminal.`;
+}
+
 function buildShare(s) {
   const cols = process.stdout.columns || 80;
   const uri = s.shareUri || "";
+  const qr = qrToTerminal(uri, { ecl: "L", quiet: 2 }).replace(/\n$/, "").split("\n");
+  const warn = qrTerminalWarning(Math.max(...qr.map(visLen)), cols);
   // Back-hint lives in the title so it's visible even if the QR is taller than the terminal.
   const lines = [`${markStr(s)} ${A.bold}collateral${A.reset}  ${A.dim}share this config · press any key to go back${A.reset}`, ``];
-  for (const q of qrToTerminal(uri, { ecl: "L", quiet: 2 }).replace(/\n$/, "").split("\n")) lines.push(q);
+  if (warn) lines.push(...wrapAnsi(`${A.amber}${warn}${A.reset}`, Math.min(cols - 2, 76)), ``);
+  for (const q of qr) lines.push(q);
   lines.push(``);
   for (const l of wrapAnsi(`${A.teal}${uri}${A.reset}`, Math.min(cols - 4, 72))) lines.push(l);
   lines.push(``,
