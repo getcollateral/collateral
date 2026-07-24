@@ -26,6 +26,7 @@ import { scanQrViaCamera, supported as scanSupported } from "./common/qrscan.js"
 
 const VPS_STEPS = [
   ["connect", "Connect to your VM over SSH"],
+  ["dns", "Verify your domain points at the VM"], // custom-domain setups only
   ["upload", "Upload the server"],
   ["install", "Install & configure (Node, Caddy, HTTPS)"],
   ["tls", "Issue the HTTPS certificate"],
@@ -592,6 +593,9 @@ async function setupVps() {
     `This app will SSH in and install everything — server, HTTPS, firewall,`,
     `and a background service. Nothing to type on the VM.`,
     ``,
+    `${A.dim}Optional: use your own domain (A record → the VM) for a stronger,`,
+    `unblockable endpoint — or press enter for automatic ${A.reset}${A.dim}<ip>.sslip.io.${A.reset}`,
+    ``,
     `Type ${A.amber}yes${A.reset} to continue, or enter to cancel.`,
   ], "yes");
   if (!ok) { draw(); return setMsg("Setup cancelled."); }
@@ -601,17 +605,20 @@ async function setupVps() {
   const user = await promptLine("SSH username (ubuntu for Ubuntu, opc for Oracle Linux)", state.vpsUser || "ubuntu");
   const keyRaw = await promptLine("Path to your SSH private key", state.vpsKey || `${os.homedir()}/.ssh/id_rsa`);
   const keyPath = keyRaw.replace(/^~(?=$|\/)/, os.homedir());
-  saveConfig({ vpsHost: host, vpsUser: user, vpsKey: keyRaw });
-  Object.assign(state, { vpsHost: host, vpsUser: user, vpsKey: keyRaw });
+  const domainRaw = await promptLine("Custom domain (A record → this VM), or enter for automatic sslip.io", state.vpsDomain || "");
+  const domain = (domainRaw || "").trim();
+  saveConfig({ vpsHost: host, vpsUser: user, vpsKey: keyRaw, vpsDomain: domain });
+  Object.assign(state, { vpsHost: host, vpsUser: user, vpsKey: keyRaw, vpsDomain: domain });
 
   state.view = "setup";
-  state.steps = VPS_STEPS.map(([name, label]) => ({ name, label, status: "pending" }));
+  // The DNS-verify step only applies when a custom domain was given.
+  state.steps = VPS_STEPS.filter(([name]) => name !== "dns" || domain).map(([name, label]) => ({ name, label, status: "pending" }));
   state.busy = true; draw();
   const logFile = `${os.homedir()}/.collateral-setup.log`;
   try { fs.writeFileSync(logFile, ""); } catch {}
   try {
     const res = await provisionVps({
-      host, user, keyPath,
+      host, user, keyPath, domain: domain || undefined,
       uuid: isUuid(state.uuid) ? state.uuid : undefined, // keep the client key as source of truth — upload it
       log: (m) => { try { fs.appendFileSync(logFile, m); } catch {} },
       onStep: (name, status, note) => {

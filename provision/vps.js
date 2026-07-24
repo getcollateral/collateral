@@ -11,10 +11,16 @@
 
 import { execFile } from "node:child_process";
 import crypto from "node:crypto";
+import dns from "node:dns/promises";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+// Normalize a user-entered domain: strip scheme/path/whitespace, lowercase. "" if empty.
+export function normalizeDomain(s) {
+  return String(s || "").trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "").toLowerCase();
+}
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SSH_OPTS = ["-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15", "-o", "BatchMode=yes"];
@@ -154,18 +160,34 @@ echo "== dns ${domain} =="; getent hosts ${domain} 2>&1 || echo "getent failed"`
 // Provision the VM and return the client endpoint. onStep(name, status, note) drives the UI.
 // Pass `uuid` to install a specific access key (the client key is the source of truth, so a
 // redeploy uploads it and stays in sync); omit it for a brand-new setup to mint a fresh one.
-export async function provisionVps({ host, user = "ubuntu", keyPath, uuid: keyArg, onStep = () => {}, log = () => {} }) {
+export async function provisionVps({ host, user = "ubuntu", keyPath, uuid: keyArg, domain: customDomain, onStep = () => {}, log = () => {} }) {
   onStep("connect", "run");
   log(`[connect] ssh ${user}@${host}\n`);
   try { await ssh(host, user, keyPath, "true", null, 20000); }
   catch (e) { throw new Error(`can't SSH in as ${user}@${host} (${(e.stderr || e.message || "").trim().split("\n").pop()})`); }
   onStep("connect", "ok", `${user}@${host}`);
 
+  // Domain: a custom one you own (stronger — no shared `*.sslip.io` pattern to block) or the
+  // automatic `<ip>.sslip.io`. A custom domain must already point at the VM or Let's Encrypt
+  // can't issue a cert, so verify its A record up front and fail early with clear guidance.
+  const custom = normalizeDomain(customDomain);
+  const domain = custom || `${host}.sslip.io`;
+  if (custom) {
+    onStep("dns", "run");
+    log(`[dns] checking ${domain} → ${host}\n`);
+    let ips = [];
+    try { ips = await dns.resolve4(domain); } catch (e) { log(`[dns] lookup failed: ${e.code || e.message}\n`); }
+    if (!ips.includes(host)) {
+      onStep("dns", "fail");
+      throw new Error(`${domain} doesn't point at ${host} yet (resolved: ${ips.join(", ") || "nothing"}). Add an A record “${domain} → ${host}”, wait a few minutes for DNS to propagate, then run setup again.`);
+    }
+    onStep("dns", "ok", `${domain} → ${host}`);
+  }
+
   const isUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s || "");
   const uuid = isUuid(keyArg) ? keyArg : crypto.randomUUID();
   log(isUuid(keyArg) ? "using your existing access key\n" : "minting a new access key\n");
   const wsPath = "/" + crypto.randomBytes(6).toString("hex");
-  const domain = `${host}.sslip.io`; // <ip>.sslip.io resolves to <ip>; no domain to buy
   log(`domain: ${domain}\n`);
 
   onStep("upload", "run");
@@ -206,9 +228,10 @@ if (process.argv[1] && /vps\.js$/.test(process.argv[1]) && process.argv[2]) {
   const host = process.argv[2];
   const user = process.argv[3] || "ubuntu";
   const keyPath = (process.argv[4] || `${os.homedir()}/.ssh/id_rsa`).replace(/^~(?=$|\/)/, os.homedir());
-  console.log(`Provisioning ${user}@${host}  (key: ${keyPath})`);
+  const domain = process.argv[5]; // optional: your own domain (A record → host)
+  console.log(`Provisioning ${user}@${host}  (key: ${keyPath})${domain ? `  domain: ${domain}` : ""}`);
   provisionVps({
-    host, user, keyPath,
+    host, user, keyPath, domain,
     onStep: (n, s, note) => process.stdout.write(`\n[${s.toUpperCase()}] ${n}${note ? " — " + note : ""}\n`),
     log: (m) => process.stdout.write(m),
   })

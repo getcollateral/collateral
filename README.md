@@ -134,6 +134,13 @@ reaches every site (incl. Cloudflare), has no connection cap, no ToS problems, a
 looks like HTTPS on 443 so filters pass it. It relays both **TCP and UDP** (QUIC/HTTP-3, games,
 DNS), which Cloudflare Workers can't do.
 
+*Custom domain (optional, stronger).* Setup also asks for a domain **you own**, already pointed
+at the VM with an A record. Use one and your endpoint's SNI becomes `your-domain.com` — an
+ordinary-looking site with **no shared pattern** a censor can block wholesale. That's the weak
+spot of `*.sslip.io` (like `*.workers.dev`, a censor can block the whole suffix at once); with
+per-user domains there's nothing common to block. Setup verifies the A record points at the VM
+before provisioning. Press enter to skip and use automatic `sslip.io` (zero-friction default).
+
 **2. Cloudflare Workers.** The quick demo path (pre-filled token → auto-deploy), but limited:
 can't reach Cloudflare-fronted sites, no UDP, and it violates Cloudflare's ToS.
 

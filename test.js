@@ -18,6 +18,7 @@ import { FrameParser, encodeFrame, OPCODES } from "./common/ws-frame.js";
 import { isIPv4Literal, isCloudflareV4, nat64Address, normalizeNat64Prefix } from "./common/nat64.js";
 import { renderFrame, hitTest } from "./tui.js";
 import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun } from "./common/tun.js";
+import { normalizeDomain } from "./provision/vps.js";
 
 const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
 
@@ -242,6 +243,14 @@ test("config: vless URI round-trips (share -> scan -> import)", () => {
 
 test("config: parseVlessUri rejects a non-vless link", () => {
   assert.throws(() => parseVlessUri("https://example.com/x"));
+});
+
+test("provision: normalizeDomain strips scheme/path/case/whitespace", () => {
+  assert.equal(normalizeDomain("  https://Proxy.Will-Notes.NET/foo?a=1 "), "proxy.will-notes.net");
+  assert.equal(normalizeDomain("will-notes.net"), "will-notes.net");
+  assert.equal(normalizeDomain("HTTP://a.b.c"), "a.b.c");
+  assert.equal(normalizeDomain(""), "");
+  assert.equal(normalizeDomain(null), "");
 });
 
 test("TUI: help view renders proxy instructions", () => {
