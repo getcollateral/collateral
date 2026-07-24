@@ -1,12 +1,12 @@
 // First-time setup, VPS edition: SSH into the user's own VM (e.g. an Oracle Cloud
-// Always-Free instance) and stand up the server automatically — no manual terminal work.
+// Always-Free instance) and stand up the server automatically - no manual terminal work.
 // This is the "app provisions your server" model (like Outline Manager).
 //
 // It bundles our server (worker-shim.js) into one file, puts Caddy in front for
 // automatic Let's Encrypt HTTPS on a <ip>.sslip.io domain (no domain purchase needed),
 // and runs it behind systemd. Uses the system `ssh` binary, so still zero npm deps.
 //
-// A real VM reaches every site, does TCP + UDP, and has no connection cap — while
+// A real VM reaches every site, does TCP + UDP, and has no connection cap - while
 // staying WebSocket-over-TLS on :443 (filter-friendly).
 
 import { execFile } from "node:child_process";
@@ -67,7 +67,7 @@ set -eo pipefail
 export DEBIAN_FRONTEND=noninteractive
 have(){ command -v "$1" >/dev/null 2>&1; }
 if ! sudo -n true 2>/dev/null; then echo COLLATERAL_NEED_NOPASSWD_SUDO; exit 1; fi
-# Use a SYSTEM node (never a home-dir nvm node — systemd as root can't exec that).
+# Use a SYSTEM node (never a home-dir nvm node - systemd as root can't exec that).
 sysnode(){ for c in /usr/bin/node /usr/local/bin/node; do if [ -x "$c" ] && [ "$("$c" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -ge 18 ]; then echo "$c"; return; fi; done; }
 NODE="$(sysnode)"
 if [ -z "$NODE" ]; then
@@ -122,7 +122,7 @@ fi
 sudo systemctl daemon-reload
 sudo systemctl enable collateral
 # restart (not 'enable --now'): on a redeploy the service is already running, and --now would
-# NOT reload it — leaving a stale process with the OLD USER_UUID/code. restart always reloads.
+# NOT reload it - leaving a stale process with the OLD USER_UUID/code. restart always reloads.
 sudo systemctl restart collateral
 sudo systemctl restart caddy || sudo systemctl start caddy
 echo COLLATERAL_SETUP_OK
@@ -143,7 +143,7 @@ function waitForHttps(domain, log = () => {}, tries = 40) {
   });
 }
 
-// Pull the state of the VM when something's wrong — this is what tells us WHY.
+// Pull the state of the VM when something's wrong - this is what tells us WHY.
 export async function diagnose(host, user, keyPath, domain) {
   const cmd = `set +e
 echo "== services active? =="; sudo systemctl is-active caddy collateral
@@ -167,7 +167,7 @@ export async function provisionVps({ host, user = "ubuntu", keyPath, uuid: keyAr
   catch (e) { throw new Error(`can't SSH in as ${user}@${host} (${(e.stderr || e.message || "").trim().split("\n").pop()})`); }
   onStep("connect", "ok", `${user}@${host}`);
 
-  // Domain: a custom one you own (stronger — no shared `*.sslip.io` pattern to block) or the
+  // Domain: a custom one you own (stronger - no shared `*.sslip.io` pattern to block) or the
   // automatic `<ip>.sslip.io`. A custom domain must already point at the VM or Let's Encrypt
   // can't issue a cert, so verify its A record up front and fail early with clear guidance.
   const custom = normalizeDomain(customDomain);
@@ -213,9 +213,9 @@ export async function provisionVps({ host, user = "ubuntu", keyPath, uuid: keyAr
   try {
     await waitForHttps(domain, log);
   } catch (e) {
-    log("\n[tls] failed — pulling VM diagnostics (this is the real reason):\n");
+    log("\n[tls] failed - pulling VM diagnostics (this is the real reason):\n");
     log("\n" + (await diagnose(host, user, keyPath, domain)) + "\n");
-    throw new Error(e.message + " — see the Caddy log in the diagnostics (rate limit? port 80 unreachable? service down?)");
+    throw new Error(e.message + " - see the Caddy log in the diagnostics (rate limit? port 80 unreachable? service down?)");
   }
   onStep("tls", "ok", domain);
 
@@ -232,7 +232,7 @@ if (process.argv[1] && /vps\.js$/.test(process.argv[1]) && process.argv[2]) {
   console.log(`Provisioning ${user}@${host}  (key: ${keyPath})${domain ? `  domain: ${domain}` : ""}`);
   provisionVps({
     host, user, keyPath, domain,
-    onStep: (n, s, note) => process.stdout.write(`\n[${s.toUpperCase()}] ${n}${note ? " — " + note : ""}\n`),
+    onStep: (n, s, note) => process.stdout.write(`\n[${s.toUpperCase()}] ${n}${note ? " - " + note : ""}\n`),
     log: (m) => process.stdout.write(m),
   })
     .then((res) => {

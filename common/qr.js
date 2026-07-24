@@ -138,7 +138,7 @@ function addEccAndInterleave(data, version, ecl) {
 }
 
 // Build the module matrix for a given version + codewords, picking the lowest-penalty mask
-// (or `forceMask` 0-7 when given — used only by tests to compare against a reference encoder).
+// (or `forceMask` 0-7 when given - used only by tests to compare against a reference encoder).
 function buildMatrix(version, codewords, ecl, forceMask = -1) {
   const size = version * 4 + 17;
   const modules = Array.from({ length: size }, () => new Array(size).fill(false));
@@ -181,7 +181,7 @@ function buildMatrix(version, codewords, ecl, forceMask = -1) {
 
   // Draw the data codewords in the zig-zag order (right to left, up/down columns). `right` is
   // MUTATED to 5 at the vertical timing column so the remaining columns shift by one (this is
-  // what lets the sweep reach column 0) — matching the reference algorithm exactly.
+  // what lets the sweep reach column 0) - matching the reference algorithm exactly.
   let bitIdx = 0;
   const totalBits = codewords.length * 8;
   for (let right = size - 1; right >= 1; right -= 2) {
@@ -318,7 +318,7 @@ export function qrMatrix(text, ecl = "L", forceMask = -1) {
 // margin in modules (spec wants 4; 2 usually suffices and saves space).
 //
 // Crispness note: a *solid* cell (both modules the same colour) is drawn as a background-filled
-// space with NO glyph — terminals fill the cell background edge-to-edge, so these tile with zero
+// space with NO glyph - terminals fill the cell background edge-to-edge, so these tile with zero
 // seams even on terminals that render block glyphs from the font (Terminal.app). Only the cells
 // where the two modules differ use a half-block `▀`. On GPU terminals that draw blocks
 // geometrically (Ghostty/Kitty/Alacritty/WezTerm) it's pixel-perfect either way.

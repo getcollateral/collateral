@@ -14,9 +14,9 @@ export function buildVlessUri({ uuid, host, port = 443, path = "/", sni, wsHost,
 }
 
 // Turn the app's stored endpoint (a wss:// worker URL + uuid) into a shareable vless:// URI,
-// so a new user can import the whole config in one scan/paste — no SSH, no first-time setup.
+// so a new user can import the whole config in one scan/paste - no SSH, no first-time setup.
 // Built directly (not via buildVlessUri) so it can omit the WS "host" header param: our server
-// routes by TLS SNI and ignores the Host header, and clients default it to the address — so
+// routes by TLS SNI and ignores the Host header, and clients default it to the address - so
 // dropping it keeps the QR smaller without breaking compatibility.
 export function vlessUriFromConfig({ workerUrl, uuid, name = "Collateral" }) {
   const u = new URL(workerUrl);
@@ -47,7 +47,7 @@ export function parseVlessUri(uri) {
   return { workerUrl, uuid, name };
 }
 
-// A subscription is just base64 of newline-joined URIs — what the app refreshes
+// A subscription is just base64 of newline-joined URIs - what the app refreshes
 // to rotate a burned endpoint without shipping an app update.
 export function buildSubscription(uris) {
   const blob = uris.join("\n");

@@ -7,7 +7,7 @@
 #
 # Either result runs on YOUR Mac immediately. To sell it you still need to code-sign +
 # notarize (Apple Developer account) so Gatekeeper opens it cleanly, and build a
-# separate Windows version — see README "Shipping it".
+# separate Windows version - see README "Shipping it".
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -52,7 +52,7 @@ pick_node() {
 }
 NODE="$(pick_node)"
 if [ -z "$NODE" ]; then
-  osascript -e 'display alert "Node.js required" message "Collateral needs Node.js. Install it from nodejs.org, then reopen — or use a build made with --embed-node."' >/dev/null 2>&1
+  osascript -e 'display alert "Node.js required" message "Collateral needs Node.js. Install it from nodejs.org, then reopen - or use a build made with --embed-node."' >/dev/null 2>&1
   exit 1
 fi
 cd "$APP"

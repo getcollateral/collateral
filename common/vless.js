@@ -1,5 +1,5 @@
 // VLESS protocol: a faithful subset, pure (Uint8Array only). VLESS carries no
-// crypto of its own — confidentiality comes entirely from the outer TLS that
+// crypto of its own - confidentiality comes entirely from the outer TLS that
 // the server (behind Caddy) terminates.
 //
 // Request header (client -> server):

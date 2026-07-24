@@ -1,5 +1,5 @@
 // macOS system SOCKS proxy control, so the tunnel can apply device-wide (to every app
-// that honors the system proxy) — not just apps you point at 127.0.0.1 manually.
+// that honors the system proxy) - not just apps you point at 127.0.0.1 manually.
 //
 // Changing network settings needs admin rights, so writes try un-elevated first and fall
 // back to an osascript GUI password prompt. Read-only queries never prompt. macOS only.

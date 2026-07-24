@@ -1,6 +1,6 @@
 // End-to-end demo: spins up a local origin, the worker-shim, and the client, then
 // drives real traffic through the whole VLESS-over-WebSocket tunnel and checks it.
-// Everything is on 127.0.0.1 with an ephemeral UUID — no cloud account, no ToS risk.
+// Everything is on 127.0.0.1 with an ephemeral UUID - no cloud account, no ToS risk.
 //
 //   run:  npm run demo   (or: node run-demo.js)
 
@@ -55,7 +55,7 @@ async function main() {
   const uuid = crypto.randomUUID();
   const nonce = crypto.randomBytes(8).toString("hex");
 
-  console.log(`\n${C.b}Collateral prototype — end-to-end tunnel demo${C.rst}`);
+  console.log(`\n${C.b}Collateral prototype - end-to-end tunnel demo${C.rst}`);
   console.log(`${C.dim}ephemeral uuid ${uuid}${C.rst}\n`);
 
   // 1. Local origin server (stands in for "the open internet").
@@ -141,7 +141,7 @@ async function main() {
     });
     record(`live exit: HTTPS to example.com over the tunnel  ${C.dim}(${status.trim()})${C.rst}`, /200|30\d/.test(status), "optional");
   } catch (e) {
-    console.log(`  ${C.dim}SKIP  live exit: no/blocked egress (${e.message}) — the localhost checks above still prove the mechanism${C.rst}`);
+    console.log(`  ${C.dim}SKIP  live exit: no/blocked egress (${e.message}) - the localhost checks above still prove the mechanism${C.rst}`);
   }
 
   // --- Show the generated client config (what onboarding hands the user) ---

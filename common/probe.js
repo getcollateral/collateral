@@ -1,5 +1,5 @@
 // Dial through the running SOCKS proxy to an echo service and read the exit IP
-// back — proves traffic really leaves via your server. Shared by the TUI and
+// back - proves traffic really leaves via your server. Shared by the TUI and
 // the web UI.
 import net from "node:net";
 import tls from "node:tls";

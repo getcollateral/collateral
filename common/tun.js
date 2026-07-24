@@ -1,24 +1,24 @@
 // Device-wide TUN mode (macOS, v1). Instead of the best-effort system SOCKS proxy, this
 // captures *all* of the machine's TCP traffic at the IP layer and routes it through the same
-// VLESS tunnel — the way a real VPN client works. We don't reinvent the utun stack: we drive
+// VLESS tunnel - the way a real VPN client works. We don't reinvent the utun stack: we drive
 // `tun2socks` (a tiny, pinned, checksum-verified helper) which creates the utun and forwards
 // every flow into our existing SOCKS5 client on 127.0.0.1. So the whole protocol path
 // (VLESS · WebSocket · TLS · server) is unchanged; TUN is just a new front door.
 //
 // Safety is the hard part of a VPN, so the design is deliberately conservative:
 //   • We never edit the real default route. We add two /1 routes (0.0.0.0/1 + 128.0.0.0/1)
-//     bound to the utun. They out-specific the default, so they win — and the kernel deletes
+//     bound to the utun. They out-specific the default, so they win - and the kernel deletes
 //     them automatically the moment the utun disappears. So if tun2socks dies for ANY reason,
 //     the machine's networking heals itself.
 //   • A host route for the server's own IP via the real gateway keeps the tunnel's own packets
 //     off the utun (otherwise they'd loop forever).
 //   • Host routes for the active public DNS servers keep name resolution working directly (DNS
 //     is NOT tunnelled: macOS resolves via mDNSResponder, which doesn't follow the utun routes,
-//     so forcing DNS through the tunnel needs a local DNS forwarder — a TODO). Fine for the
+//     so forcing DNS through the tunnel needs a local DNS forwarder - a TODO). Fine for the
 //     school/office threat model, which mostly blocks by SNI/IP, not DNS.
 //   • One admin prompt (a macOS GUI dialog) starts a root "session" script that owns tun2socks
 //     and *watches the app's PID*: if the app exits or crashes, the script tears everything
-//     down. The app asks it to stop by touching a file — no root needed to turn it off.
+//     down. The app asks it to stop by touching a file - no root needed to turn it off.
 //
 // Known v1 limits: macOS + IPv4 only. TCP + UDP both relay through the tunnel (the server has a
 // dgram UDP relay). DNS is resolved directly (see above); IPv6 is not captured (v4-only TUN).
@@ -45,7 +45,7 @@ const SHA256 = {
   "linux-arm64": "3931476c9cfa8fa236d23aeaf36767df0eb27cc11ecaab699faba57744450f49",
 };
 
-const TUN_ADDR = "198.18.0.1";        // RFC 2544 benchmarking range — safe, non-routable
+const TUN_ADDR = "198.18.0.1";        // RFC 2544 benchmarking range - safe, non-routable
 const HOME = os.homedir();
 const DIR = path.join(HOME, ".collateral");
 const BIN_DIR = path.join(DIR, "bin");
@@ -68,7 +68,7 @@ export function assetUrl() {
   return `https://github.com/xjasonlyu/tun2socks/releases/download/${TUN2SOCKS_VERSION}/${assetName()}.zip`;
 }
 
-// RFC 1918 / link-local / loopback — a DNS server in these ranges is on the LAN and is already
+// RFC 1918 / link-local / loopback - a DNS server in these ranges is on the LAN and is already
 // reached via the more-specific subnet route, so it must NOT be host-routed to the gateway.
 export function isPrivateIp(ip) {
   const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(ip || "");
@@ -131,7 +131,7 @@ export async function ensureBinary(onLog = () => {}) {
   if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
   const got = crypto.createHash("sha256").update(buf).digest("hex");
-  if (got !== want) throw new Error(`checksum mismatch (expected ${want.slice(0, 12)}…, got ${got.slice(0, 12)}…) — refusing to run it`);
+  if (got !== want) throw new Error(`checksum mismatch (expected ${want.slice(0, 12)}…, got ${got.slice(0, 12)}…) - refusing to run it`);
   const zip = path.join(BIN_DIR, `${assetName()}.zip`);
   fs.writeFileSync(zip, buf);
   onLog("verifying + unpacking…");
@@ -145,12 +145,12 @@ export async function ensureBinary(onLog = () => {}) {
 }
 
 // The root session script. It owns tun2socks, applies the routing, then blocks until asked to
-// stop / the app dies / tun2socks dies — and always tears down on the way out (trap on EXIT).
+// stop / the app dies / tun2socks dies - and always tears down on the way out (trap on EXIT).
 export function sessionScript({ dev, socksPort, serverIp, dnsIps, service, ownerPid }) {
   const dnsAdd = dnsIps.map((d) => `route -n add -host ${d} "$GW" 2>/dev/null || true`).join("\n  ");
   const dnsDel = dnsIps.map((d) => `route -n delete -host ${d} 2>/dev/null || true`).join("\n  ");
   return `#!/bin/bash
-# Collateral TUN session — runs as root. Self-heals on exit.
+# Collateral TUN session - runs as root. Self-heals on exit.
 set -u
 BIN=${JSON.stringify(BIN)}
 DEV=${JSON.stringify(dev)}
@@ -186,13 +186,13 @@ route -n add -host "$SERVER_IP" "$GW"            # tunnel's own packets bypass t
 ${dnsAdd || ": no public dns to route"}
 route -n add -net 0.0.0.0/1 "$ADDR"              # capture everything else via the utun...
 route -n add -net 128.0.0.0/1 "$ADDR"            # ...without ever touching the real default route
-# IPv6: the TUN is v4-only, so disable v6 on the primary service — otherwise v6 traffic bypasses
+# IPv6: the TUN is v4-only, so disable v6 on the primary service - otherwise v6 traffic bypasses
 # the tunnel. cleanup() restores it to automatic. (DNS stays direct; tunnelling it needs a local
-# forwarder, a separate TODO — macOS mDNSResponder doesn't follow the utun routes.)
+# forwarder, a separate TODO - macOS mDNSResponder doesn't follow the utun routes.)
 [ -n "$SERVICE" ] && networksetup -setv6off "$SERVICE" 2>/dev/null || true
 touch "$READY"
 
-# hold until: stop requested, app gone, or tun2socks died — then the trap heals the network
+# hold until: stop requested, app gone, or tun2socks died - then the trap heals the network
 while [ ! -f "$STOP" ] && kill -0 "$OWNER" 2>/dev/null && kill -0 "$TPID" 2>/dev/null; do
   sleep 1
 done
@@ -204,7 +204,7 @@ const asEsc = (s) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
 // Start device-wide TUN. Needs the SOCKS client already listening on `socksPort`. Prompts once
 // for admin (GUI). Resolves when the interface is up and routed; rejects with the log tail on
-// failure. Reuses the existing tunnel — no server changes.
+// failure. Reuses the existing tunnel - no server changes.
 export async function startTun({ socksPort, serverHost, onLog = () => {} }) {
   if (!supported()) throw new Error("TUN mode is macOS-only in this version.");
   await ensureBinary(onLog);
@@ -227,15 +227,15 @@ export async function startTun({ socksPort, serverHost, onLog = () => {} }) {
 
   // Wait for the session to signal readiness.
   for (let i = 0; i < 150; i++) {
-    if (fs.existsSync(READY_FILE)) { onLog(`full tunnel up on ${dev} — all TCP now routes through the server.`); return { dev, serverIp }; }
+    if (fs.existsSync(READY_FILE)) { onLog(`full tunnel up on ${dev} - all TCP now routes through the server.`); return { dev, serverIp }; }
     await new Promise((r) => setTimeout(r, 100));
   }
   let tail = "";
   try { tail = fs.readFileSync(LOG_FILE, "utf8").trim().split("\n").slice(-3).join(" "); } catch {}
-  throw new Error("TUN didn't come up" + (tail ? ` — ${tail}` : "") + ` (log: ${LOG_FILE})`);
+  throw new Error("TUN didn't come up" + (tail ? ` - ${tail}` : "") + ` (log: ${LOG_FILE})`);
 }
 
-// Ask the root session to stop — just touch the stop file (no admin needed). Resolves once the
+// Ask the root session to stop - just touch the stop file (no admin needed). Resolves once the
 // interface is gone (network restored).
 export async function stopTun(onLog = () => {}) {
   try { fs.writeFileSync(STOP_FILE, "1"); } catch {}

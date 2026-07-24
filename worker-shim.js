@@ -99,7 +99,7 @@ function handleSession(socket, head, expected, quiet) {
         } else if (hdr.command === 2) {
           // UDP relay. One WebSocket carries one destination (host:port). Each subsequent WS
           // message is a datagram to send; each datagram received comes back as a WS message
-          // (no length prefix / no response header — WebSocket already preserves boundaries).
+          // (no length prefix / no response header - WebSocket already preserves boundaries).
           mode = "udp";
           const sock = dgram.createSocket(hdr.atype === 3 ? "udp6" : "udp4");
           const bump = () => { if (idleTimer) clearTimeout(idleTimer); idleTimer = setTimeout(closeAll, UDP_IDLE_MS); };

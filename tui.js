@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Collateral — terminal control panel. Full-screen, centered, single-keypress, no
+// Collateral - terminal control panel. Full-screen, centered, single-keypress, no
 // browser, no dependencies. Runs in any terminal on any OS.
 //
 //   node tui.js        (or: npm run tui)
@@ -40,8 +40,8 @@ const HIDE = "\x1b[?25l", SHOW = "\x1b[?25h";
 const NOWRAP = "\x1b[?7l", WRAP = "\x1b[?7h";
 // Enter/leave a full-screen app view. The load-bearing part beyond 1049 (alt screen)
 // is smkx = "\x1b[?1h\x1b=" (DECCKM + application keypad): Terminal.app only engages its
-// alternate-screen scroll — which locks our frame in place instead of scrolling the
-// buffer — when application-cursor mode is on. This is exactly what htop/vim/less emit.
+// alternate-screen scroll - which locks our frame in place instead of scrolling the
+// buffer - when application-cursor mode is on. This is exactly what htop/vim/less emit.
 // 1007h (alternate scroll) covers xterm/VTE/kitty/Windows Terminal; it's a no-op on
 // Terminal.app. Ordered per xterm ctlseqs; exit is the exact reverse.
 // ...plus mouse tracking. 1003 = any-event (report motion too, so we can HOVER-highlight),
@@ -101,7 +101,7 @@ function wrapAnsi(s, width) {
 
 // A menu cell padded to `width`. The whole cell is the click target; when it's the hovered
 // item the entire cell becomes a reverse-video highlight bar, so it's obvious it's clickable.
-// No brackets around the key — just the amber key letter, then the label.
+// No brackets around the key - just the amber key letter, then the label.
 function menuCell(s, k, l, width, hlTrim = 0) {
   const styled = `${A.amber}${k}${A.reset}  ${l}`;
   if (k === s.hover) {
@@ -139,7 +139,7 @@ function buildBox(s) {
     zones: zones.map((z) => ({ line: z.i + 1, x0: z.x0, x1: z.x1, key: z.key })), // +1 for top border
   });
 
-  const brand = `${markStr(s)} ${A.bold}collateral${A.reset}`;
+  const brand = `${markStr(s)} ${A.bold}collateral${A.reset}${A.amber}_${A.reset}`;
 
   if (s.view === "help") {
     const port = s.socksPort || "<port>";
@@ -152,7 +152,7 @@ function buildBox(s) {
       `${A.muted}device-wide${A.reset} (d)  flips the macOS system proxy;`,
       `             Apple treats it as best-effort.`,
       `${A.muted}curl${A.reset}         curl --socks5-hostname 127.0.0.1:${port} …`, ``,
-      `${A.dim}Your VM reaches every site directly — nothing to${A.reset}`,
+      `${A.dim}Your VM reaches every site directly - nothing to${A.reset}`,
       `${A.dim}configure per site.${A.reset}`, SEP,
       `${A.dim}press any key or click to go back${A.reset}`,
     );
@@ -189,7 +189,7 @@ function buildBox(s) {
     return finish();
   }
 
-  // main view — header: brand + subtitle + right-aligned status word (the [•] mark = state)
+  // main view - header: brand + subtitle + right-aligned status word (the [•] mark = state)
   const statusWord = s.busy ? A.amber + s.busyText + A.reset
     : s.connected && s.reconnecting ? A.amber + "reconnecting…" + A.reset
     : s.connected ? A.green + "connected" + A.reset : A.muted + "disconnected" + A.reset;
@@ -198,12 +198,12 @@ function buildBox(s) {
   body.push(`${A.dim}your own private proxy${A.reset}`);
 
   const row = (label, val) => `${A.muted}${label.padEnd(9)}${A.reset}  ${val}`;
-  const none = A.dim + "—" + A.reset;
+  const none = A.dim + "-" + A.reset;
   const vw = innerW - 13;
   body.push(SEP,
     row("proxy", s.connected ? `${A.teal}socks5${A.reset}  127.0.0.1:${s.socksPort}` : none),
-    row("endpoint", s.workerUrl ? ellip(s.workerUrl, vw) : A.dim + "(not set — press w)" + A.reset),
-    row("key", s.uuid ? ellip(s.uuid, vw) : A.dim + "(not set — press u or g)" + A.reset),
+    row("endpoint", s.workerUrl ? ellip(s.workerUrl, vw) : A.dim + "(not set - press w)" + A.reset),
+    row("key", s.uuid ? ellip(s.uuid, vw) : A.dim + "(not set - press u or g)" + A.reset),
     row("exit ip", s.exitIP ? A.teal + s.exitIP + A.reset : none),
     row("transport", `${A.dim}VLESS · WebSocket · TLS · :443${A.reset}`),
     SEP,
@@ -251,11 +251,11 @@ export function hitTest(built, cols, rows, X, Y) {
   return null;
 }
 
-// Full-screen rendering in the alternate screen buffer — the model vim/htop/less use.
+// Full-screen rendering in the alternate screen buffer - the model vim/htop/less use.
 // Paint the ENTIRE screen every frame (box centered, blank padding around it) from home,
 // so no terminal history shows and the panel is centered. The key to not breaking on
 // scroll: only repaint on EVENTS (keypress, state change, resize, spinner-tick-while-busy),
-// never on an idle timer. Then a scroll gesture behaves exactly like it does in vim — the
+// never on an idle timer. Then a scroll gesture behaves exactly like it does in vim - the
 // terminal shows scrollback while scrolled and restores the frame on the way back.
 function draw() {
   if (!process.stdout.isTTY) { w(renderFrame(state) + "\n"); return; }
@@ -277,11 +277,11 @@ function draw() {
 }
 
 // The share view: a scannable QR of the vless:// config + the link, so a new user can import
-// the whole endpoint in one scan/paste — no SSH, no first-time setup.
+// the whole endpoint in one scan/paste - no SSH, no first-time setup.
 // Two kinds of feedback for the share view:
-//  • "warn" (amber) — the QR genuinely won't SCAN here: no color (black/white contrast), a
+//  • "warn" (amber) - the QR genuinely won't SCAN here: no color (black/white contrast), a
 //    non-UTF-8 locale (the block glyphs), or the terminal is too narrow. Use the text link.
-//  • "note" (dim) — it scans, but this terminal draws block characters from the FONT (Terminal
+//  • "note" (dim) - it scans, but this terminal draws block characters from the FONT (Terminal
 //    .app), so it looks seamy/rectangular. GPU terminals (Ghostty/Kitty/WezTerm/Alacritty) draw
 //    them geometrically = crisp. We only flag the known font-based one so it stays quiet elsewhere.
 function qrTerminalNote(qrWidth, cols) {
@@ -289,8 +289,8 @@ function qrTerminalNote(qrWidth, cols) {
   if (typeof process.stdout.hasColors === "function" && !process.stdout.hasColors()) blockers.push("no color support");
   const loc = (process.env.LC_ALL || process.env.LC_CTYPE || process.env.LANG || "").toLowerCase();
   if (process.platform !== "darwin" && loc && !/utf-?8/.test(loc)) blockers.push("non-UTF-8 locale");
-  if (qrWidth > cols) blockers.push(`too narrow — needs ${qrWidth} cols, you have ${cols}`);
-  if (blockers.length) return { tone: "warn", text: `⚠ this terminal may not render a scannable QR (${blockers.join("; ")}) — copy the link below.` };
+  if (qrWidth > cols) blockers.push(`too narrow - needs ${qrWidth} cols, you have ${cols}`);
+  if (blockers.length) return { tone: "warn", text: `⚠ this terminal may not render a scannable QR (${blockers.join("; ")}) - copy the link below.` };
   if (process.env.TERM_PROGRAM === "Apple_Terminal") return { tone: "note", text: "Terminal.app draws block characters from the font, so this QR may look seamy (it still scans). Ghostty · Kitty · WezTerm render it crisply." };
   return null;
 }
@@ -301,7 +301,7 @@ function buildShare(s) {
   const qr = qrToTerminal(uri, { ecl: "L", quiet: 2 }).replace(/\n$/, "").split("\n");
   const note = qrTerminalNote(Math.max(...qr.map(visLen)), cols);
   // Back-hint lives in the title so it's visible even if the QR is taller than the terminal.
-  const lines = [`${markStr(s)} ${A.bold}collateral${A.reset}  ${A.dim}share this config · press any key to go back${A.reset}`, ``];
+  const lines = [`${markStr(s)} ${A.bold}collateral${A.reset}${A.amber}_${A.reset}  ${A.dim}share this config · press any key to go back${A.reset}`, ``];
   if (note) {
     const c = note.tone === "warn" ? A.amber : A.dim;
     lines.push(...wrapAnsi(`${c}${note.tone === "note" ? "note: " : ""}${note.text}${A.reset}`, Math.min(cols - 2, 76)), ``);
@@ -317,7 +317,7 @@ function buildShare(s) {
 
 function shareConfig() {
   if (!isWsUrl(state.workerUrl) || !isUuid(state.uuid)) {
-    return setMsg(A.red + "Nothing to share yet — set a server + key, or run setup (s)." + A.reset);
+    return setMsg(A.red + "Nothing to share yet - set a server + key, or run setup (s)." + A.reset);
   }
   try { state.shareUri = vlessUriFromConfig({ workerUrl: state.workerUrl, uuid: state.uuid }); }
   catch (e) { return setMsg(A.red + `Couldn't build the share link: ${e.message || e}` + A.reset); }
@@ -328,7 +328,7 @@ function shareConfig() {
 // Import a config from another instance by scanning its share QR (`x`) with the Mac camera.
 async function importFromCamera() {
   if (!scanSupported()) return setMsg(A.red + "Camera import is macOS-only in this version." + A.reset);
-  state.busy = true; state.busyText = "opening camera — point at the other Mac's QR (Esc cancels)…"; draw();
+  state.busy = true; state.busyText = "opening camera - point at the other Mac's QR (Esc cancels)…"; draw();
   let uri;
   try { uri = await scanQrViaCamera(); }
   catch (e) { state.busy = false; return setMsg(A.red + `Camera: ${e.message || e}` + A.reset); }
@@ -341,7 +341,7 @@ async function importFromCamera() {
   state.workerUrl = cfg.workerUrl; state.uuid = cfg.uuid;
   saveConfig({ workerUrl: cfg.workerUrl, uuid: cfg.uuid });
   let host = cfg.workerUrl; try { host = new URL(cfg.workerUrl).host; } catch {}
-  setMsg(A.green + `Imported ${host} — press c to connect.` + A.reset);
+  setMsg(A.green + `Imported ${host} - press c to connect.` + A.reset);
 }
 function setMsg(m) { state.msg = m; draw(); }
 
@@ -354,8 +354,8 @@ function startSocks(workerUrl, uuid, port) {
 }
 
 async function connect() {
-  if (!isWsUrl(state.workerUrl)) return setMsg(A.red + "Set a server address first (wss://…) — press w." + A.reset);
-  if (!isUuid(state.uuid)) return setMsg(A.red + "Set a valid access key first — press u or g." + A.reset);
+  if (!isWsUrl(state.workerUrl)) return setMsg(A.red + "Set a server address first (wss://…) - press w." + A.reset);
+  if (!isUuid(state.uuid)) return setMsg(A.red + "Set a valid access key first - press u or g." + A.reset);
   state.busy = true; state.busyText = "connecting…"; draw();
   try {
     try { socks = await startSocks(state.workerUrl, state.uuid, 1080); }
@@ -366,7 +366,7 @@ async function connect() {
     const ip = await getExitIP(state.socksPort);
     state.exitIP = ip; state.connected = true; state.reconnecting = false; state.busy = false;
     startHealthMonitor();
-    setMsg(A.green + `Connected — traffic exits via ${ip}.` + A.reset);
+    setMsg(A.green + `Connected - traffic exits via ${ip}.` + A.reset);
   } catch (e) {
     if (socks) { try { socks.close(); } catch {} }
     socks = null; state.socksPort = null; state.connected = false; state.exitIP = null;
@@ -376,7 +376,7 @@ async function connect() {
 }
 
 async function disconnect() {
-  // Turn off device-wide capture FIRST — leaving the system proxy or the TUN pointed at a dead
+  // Turn off device-wide capture FIRST - leaving the system proxy or the TUN pointed at a dead
   // tunnel would break the user's internet.
   if (state.tunActive) {
     state.busy = true; state.busyText = "turning off full tunnel…"; draw();
@@ -396,7 +396,7 @@ async function disconnect() {
 
 // Health monitor: while connected, periodically verify the tunnel still reaches the internet.
 // Each app connection opens its own WebSocket, so the tunnel already self-heals when the server
-// returns — this keeps the STATUS honest (shows "reconnecting…" during an outage, flips back to
+// returns - this keeps the STATUS honest (shows "reconnecting…" during an outage, flips back to
 // "connected" when it recovers) and refreshes the exit IP. Needs two consecutive failures before
 // flagging (rides out transient blips); polls slowly when healthy, retries fast while down.
 function startHealthMonitor() { healthFails = 0; scheduleHealth(HEALTH_OK_MS); }
@@ -412,11 +412,11 @@ async function healthTick() {
       new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 9000)),
     ]);
     state.exitIP = ip; healthFails = 0;
-    if (state.reconnecting) { state.reconnecting = false; setMsg(A.green + `Tunnel recovered — exits via ${ip}.` + A.reset); }
+    if (state.reconnecting) { state.reconnecting = false; setMsg(A.green + `Tunnel recovered - exits via ${ip}.` + A.reset); }
     scheduleHealth(HEALTH_OK_MS);
   } catch {
     healthFails++;
-    if (healthFails >= 2 && !state.reconnecting) { state.reconnecting = true; setMsg(A.amber + "Tunnel unreachable — reconnecting automatically…" + A.reset); }
+    if (healthFails >= 2 && !state.reconnecting) { state.reconnecting = true; setMsg(A.amber + "Tunnel unreachable - reconnecting automatically…" + A.reset); }
     scheduleHealth(healthFails >= 2 ? Math.min(8000, HEALTH_OK_MS) : Math.min(4000, HEALTH_OK_MS));
   }
 }
@@ -429,19 +429,19 @@ async function toggleTun() {
     state.busy = true; state.busyText = "turning off full tunnel…"; draw();
     const ok = await tun.stopTun();
     state.tunActive = false; state.busy = false;
-    return setMsg(ok ? "Full tunnel off — networking restored." : A.red + "Couldn't confirm teardown — check `node common/tun.js status`." + A.reset);
+    return setMsg(ok ? "Full tunnel off - networking restored." : A.red + "Couldn't confirm teardown - check `node common/tun.js status`." + A.reset);
   }
-  if (!state.connected) return setMsg(A.red + "Connect first — the full tunnel routes every app through the tunnel." + A.reset);
+  if (!state.connected) return setMsg(A.red + "Connect first - the full tunnel routes every app through the tunnel." + A.reset);
   if (state.systemProxy) { try { await setSocks(state.netService, false); } catch {} state.systemProxy = false; } // exclusive
   const go = await confirmWord([
     `${A.amber}${A.bold}Full tunnel (device-wide TUN)${A.reset}`,
     ``,
-    `This captures ${A.bold}all TCP traffic${A.reset} from every app at the network layer —`,
+    `This captures ${A.bold}all TCP traffic${A.reset} from every app at the network layer -`,
     `the real VPN-style path, not the best-effort system proxy.`,
     ``,
     `• Needs ${A.bold}admin${A.reset} once (a macOS password dialog).`,
     `• First time, downloads a small verified helper (~4 MB).`,
-    `• ${A.dim}UDP/QUIC isn't relayed yet (server is TCP-only) — browsers fall back to TCP.${A.reset}`,
+    `• ${A.dim}UDP/QUIC isn't relayed yet (server is TCP-only) - browsers fall back to TCP.${A.reset}`,
     `• Turns off automatically on disconnect, quit, or if this app crashes.`,
     ``,
     `Type ${A.amber}yes${A.reset} to continue, or enter to cancel.`,
@@ -452,7 +452,7 @@ async function toggleTun() {
     const host = new URL(state.workerUrl).host;
     await tun.startTun({ socksPort: state.socksPort, serverHost: host, onLog: (m) => { state.busyText = m; draw(); } });
     state.tunActive = true; state.busy = false;
-    setMsg(A.green + "Full tunnel ON — every app's TCP now routes through the server." + A.reset + `  ${A.dim}(press f to turn off)${A.reset}`);
+    setMsg(A.green + "Full tunnel ON - every app's TCP now routes through the server." + A.reset + `  ${A.dim}(press f to turn off)${A.reset}`);
   } catch (e) {
     state.tunActive = false; state.busy = false;
     setMsg(A.red + `Full tunnel failed: ${e.message || e}` + A.reset);
@@ -460,11 +460,11 @@ async function toggleTun() {
 }
 
 async function toggleSystemProxy() {
-  if (!sysproxySupported()) return setMsg(A.red + "Device-wide is macOS-only here — set your OS proxy manually (press p)." + A.reset);
+  if (!sysproxySupported()) return setMsg(A.red + "Device-wide is macOS-only here - set your OS proxy manually (press p)." + A.reset);
   if (!state.netService) state.netService = await primaryService();
   if (!state.netService) return setMsg(A.red + "Couldn't find your network service." + A.reset);
   const turnOn = !state.systemProxy;
-  if (turnOn && !state.connected) return setMsg(A.red + "Connect first — device-wide routes every app through the tunnel." + A.reset);
+  if (turnOn && !state.connected) return setMsg(A.red + "Connect first - device-wide routes every app through the tunnel." + A.reset);
   if (turnOn && state.tunActive) { try { await tun.stopTun(); } catch {} state.tunActive = false; } // exclusive with full tunnel
   state.busy = true; state.busyText = turnOn ? "enabling system proxy (may ask for your password)…" : "disabling system proxy…"; draw();
   const ok = await setSocks(state.netService, turnOn, "127.0.0.1", state.socksPort || 1080);
@@ -472,12 +472,12 @@ async function toggleSystemProxy() {
   if (!ok) return setMsg(A.red + "Couldn't change the system proxy (cancelled or failed)." + A.reset);
   state.systemProxy = turnOn;
   setMsg(turnOn
-    ? A.green + "Device-wide ON — every app now routes through the tunnel." + A.reset + `  ${A.dim}(press d to turn off before quitting)${A.reset}`
-    : "Device-wide off — apps use your normal connection again.");
+    ? A.green + "Device-wide ON - every app now routes through the tunnel." + A.reset + `  ${A.dim}(press d to turn off before quitting)${A.reset}`
+    : "Device-wide off - apps use your normal connection again.");
 }
 
 async function test() {
-  if (!state.connected) return setMsg(A.red + "Connect first — press c." + A.reset);
+  if (!state.connected) return setMsg(A.red + "Connect first - press c." + A.reset);
   state.busy = true; state.busyText = "testing…"; draw();
   try {
     const ip = await getExitIP(state.socksPort);
@@ -508,7 +508,7 @@ async function regenKey() {
 }
 
 // In-box prompt: renders as a centered box view (state.view = "prompt") and reads input in
-// raw mode — no jump to a bare top-left fullscreen readline. Returns the entered text.
+// raw mode - no jump to a bare top-left fullscreen readline. Returns the entered text.
 function promptStart(lines, current) {
   return new Promise((resolve) => {
     inPrompt = true;
@@ -555,18 +555,18 @@ async function setupVps() {
     `${A.bold}Ubuntu${A.reset} instance is ideal (free forever). Before continuing, open`,
     `${A.bold}ports 80 and 443${A.reset} in its cloud console security list (one-time).`,
     ``,
-    `This app will SSH in and install everything — server, HTTPS, firewall,`,
+    `This app will SSH in and install everything - server, HTTPS, firewall,`,
     `and a background service. Nothing to type on the VM.`,
     ``,
     `${A.dim}Optional: use your own domain (A record → the VM) for a stronger,`,
-    `unblockable endpoint — or press enter for automatic ${A.reset}${A.dim}<ip>.sslip.io.${A.reset}`,
+    `unblockable endpoint - or press enter for automatic ${A.reset}${A.dim}<ip>.sslip.io.${A.reset}`,
     ``,
     `Type ${A.amber}yes${A.reset} to continue, or enter to cancel.`,
   ], "yes");
   if (!ok) { draw(); return setMsg("Setup cancelled."); }
 
   const host = await promptLine("VM public IP address", state.vpsHost || "");
-  if (!host) { draw(); return setMsg("Cancelled — no IP entered."); }
+  if (!host) { draw(); return setMsg("Cancelled - no IP entered."); }
   const user = await promptLine("SSH username (ubuntu for Ubuntu, opc for Oracle Linux)", state.vpsUser || "ubuntu");
   const keyRaw = await promptLine("Path to your SSH private key", state.vpsKey || `${os.homedir()}/.ssh/id_rsa`);
   const keyPath = keyRaw.replace(/^~(?=$|\/)/, os.homedir());
@@ -584,7 +584,7 @@ async function setupVps() {
   try {
     const res = await provisionVps({
       host, user, keyPath, domain: domain || undefined,
-      uuid: isUuid(state.uuid) ? state.uuid : undefined, // keep the client key as source of truth — upload it
+      uuid: isUuid(state.uuid) ? state.uuid : undefined, // keep the client key as source of truth - upload it
       log: (m) => { try { fs.appendFileSync(logFile, m); } catch {} },
       onStep: (name, status, note) => {
         const st = state.steps.find((x) => x.name === name);
@@ -625,7 +625,7 @@ async function handleKey(k) {
       return setMsg(state.workerUrl ? "Saved server address." : "Cleared server address.");
     }
     case "u": {
-      const v = await promptLine("Access key (UUID) — paste it", state.uuid);
+      const v = await promptLine("Access key (UUID) - paste it", state.uuid);
       state.uuid = v || ""; saveConfig({ uuid: state.uuid });
       return setMsg(state.uuid ? "Saved access key." : "Cleared access key.");
     }
@@ -637,7 +637,7 @@ function keyHandler(str) {
   if (str === "\x03") return quit(); // Ctrl-C
   if (state.view === "prompt") return promptKey(str);
   // SGR mouse event: \x1b[<button;x;yM (press) / m (release). Act on left press only;
-  // ignore release, drag, and wheel (64/65) — the wheel is swallowed so scroll stays locked.
+  // ignore release, drag, and wheel (64/65) - the wheel is swallowed so scroll stays locked.
   // A single stdin chunk can carry several mouse events (rapid motion) and/or a trailing
   // keystroke. Handle the last click (or last move) and then any leftover key.
   const events = [...str.matchAll(/\x1b\[<(\d+);(\d+);(\d+)([Mm])/g)];
@@ -689,7 +689,7 @@ function cleanup() {
   if (state.tunActive) tun.requestStopSync();
   if (socks) { try { socks.close(); } catch {} }
   try { process.stdin.setRawMode(false); } catch {}
-  // Synchronous write so the terminal is restored even though process.exit() follows —
+  // Synchronous write so the terminal is restored even though process.exit() follows -
   // an async write would be truncated and leave the terminal stuck in the alt buffer.
   try { fs.writeSync(process.stdout.fd, SHOW + WRAP + SCREEN_OFF); }
   catch { w(SHOW + WRAP + SCREEN_OFF); }
@@ -713,7 +713,7 @@ async function quit() {
 
 function main() {
   if (!process.stdin.isTTY) {
-    process.stdout.write(renderFrame(state) + "\n\n  (interactive controls need a real terminal — run: node tui.js)\n");
+    process.stdout.write(renderFrame(state) + "\n\n  (interactive controls need a real terminal - run: node tui.js)\n");
     process.exit(0);
   }
   w(SCREEN_ON + HIDE + NOWRAP);
@@ -729,23 +729,23 @@ function main() {
   renderTimer = setInterval(() => { if (!inPrompt && state.busy) { spinI = (spinI + 1) % SPIN.length; draw(); } }, 120);
   draw();
   // Detect the current system-proxy state (read-only, no prompt). Warn if a previous
-  // session left it on while we're not connected — that would strand the user's traffic.
+  // session left it on while we're not connected - that would strand the user's traffic.
   if (sysproxySupported()) (async () => {
     state.netService = await primaryService();
     state.systemProxy = await socksEnabled(state.netService);
     if (state.systemProxy && !state.connected) {
-      state.msg = A.red + "Device-wide proxy is ON but not connected — press c to connect, or d to turn it off." + A.reset;
+      state.msg = A.red + "Device-wide proxy is ON but not connected - press c to connect, or d to turn it off." + A.reset;
     }
-    // A leftover TUN session from a crashed run would strand traffic — surface it so f turns it off.
+    // A leftover TUN session from a crashed run would strand traffic - surface it so f turns it off.
     if (tun.supported() && await tun.isActive().catch(() => false)) {
       state.tunActive = true;
-      state.msg = A.red + "A full tunnel from a previous run is still active — press f to turn it off." + A.reset;
+      state.msg = A.red + "A full tunnel from a previous run is still active - press f to turn it off." + A.reset;
     }
     draw();
   })();
 }
 
-// Run main() when this file IS the entry point. Resolve symlinks on both sides — when launched
+// Run main() when this file IS the entry point. Resolve symlinks on both sides - when launched
 // via the `bin` (npx/global install), process.argv[1] is a symlink to this file, so a plain
 // string compare fails and the app would exit silently.
 function isEntrypoint() {

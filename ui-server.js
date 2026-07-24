@@ -1,4 +1,4 @@
-// Collateral control panel — a local web GUI so non-technical users never touch a
+// Collateral control panel - a local web GUI so non-technical users never touch a
 // terminal. This Node process runs the SOCKS tunnel AND serves a dashboard at
 // 127.0.0.1 that it auto-opens in the browser. Zero dependencies; no native toolchain.
 //
@@ -18,7 +18,7 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { startClient } from "./client.js";
 
-// Store config in the user's home dir, not next to the script — a packaged .app
+// Store config in the user's home dir, not next to the script - a packaged .app
 // bundle is read-only.
 const CONFIG_PATH = path.join(os.homedir(), ".collateral-config.json");
 const TOKEN = crypto.randomUUID();
@@ -249,9 +249,9 @@ function page() {
 
   <div class="card">
     <h2>Status</h2>
-    <div class="kv"><span class="k">State</span><span class="v" id="sState">—</span></div>
-    <div class="kv"><span class="k">Local proxy</span><span class="v" id="sProxy">—</span></div>
-    <div class="kv"><span class="k">Exit IP</span><span class="v" id="sExit">—</span></div>
+    <div class="kv"><span class="k">State</span><span class="v" id="sState">-</span></div>
+    <div class="kv"><span class="k">Local proxy</span><span class="v" id="sProxy">-</span></div>
+    <div class="kv"><span class="k">Exit IP</span><span class="v" id="sExit">-</span></div>
     <div class="row" style="margin-top:14px"><button id="test" style="width:100%">Test connection</button></div>
   </div>
 
@@ -261,7 +261,7 @@ function page() {
       <li><b>Firefox:</b> Settings → Network Settings → Manual proxy → SOCKS v5 host <code id="ph1">127.0.0.1</code>, port <code id="pp1">1080</code>, and tick “Proxy DNS when using SOCKS v5”.</li>
       <li><b>macOS (all apps):</b> System Settings → Network → your Wi‑Fi → Details → Proxies → SOCKS, host <code>127.0.0.1</code> port <code id="pp2">1080</code>.</li>
     </ol>
-    <div class="hintbox" style="margin-top:12px">Your VM reaches every site directly — no per‑site setup.</div>
+    <div class="hintbox" style="margin-top:12px">Your VM reaches every site directly - no per‑site setup.</div>
   </div>
 
   <div class="foot">Running locally on your machine · your traffic exits via <b>your own VM</b></div>
@@ -287,16 +287,16 @@ function render(s){
   $("pillText").textContent = on ? "Connected" : "Disconnected";
   $("sState").textContent = on ? "Connected" : "Not connected";
   const port = s.socksPort || 1080;
-  $("sProxy").textContent = on ? ("127.0.0.1:" + port) : "—";
+  $("sProxy").textContent = on ? ("127.0.0.1:" + port) : "-";
   $("pp1").textContent = port; $("pp2").textContent = port;
   const btn = $("connect"); btn.textContent = on ? "Disconnect" : "Connect"; btn.className = "connect" + (on?" on":"");
   $("test").disabled = !on;
-  if (!on) $("sExit").textContent = "—";
+  if (!on) $("sExit").textContent = "-";
   if (s.workerUrl && !document.activeElement.matches("#workerUrl")) $("workerUrl").value = s.workerUrl;
   if (s.uuid && !document.activeElement.matches("#uuid")) $("uuid").value = s.uuid;
 }
 
-$("gen").onclick = async () => { const {uuid} = await api("/api/generate-uuid","POST"); $("uuid").value = uuid; toast("New access key generated — re-run setup to upload it to your server."); };
+$("gen").onclick = async () => { const {uuid} = await api("/api/generate-uuid","POST"); $("uuid").value = uuid; toast("New access key generated - re-run setup to upload it to your server."); };
 $("connect").onclick = async () => {
   const btn=$("connect"); const wasOn = btn.classList.contains("on");
   btn.disabled = true; $("pill").className="pill busy"; $("pillText").textContent = wasOn?"Disconnecting…":"Connecting…";
