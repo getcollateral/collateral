@@ -284,26 +284,34 @@ function draw() {
 
 // The share view: a scannable QR of the vless:// config + the link, so a new user can import
 // the whole endpoint in one scan/paste — no SSH, no first-time setup.
-// Warn if the terminal can't render a scannable QR. It needs: color (black/white contrast, or
-// it won't scan), a UTF-8 locale (the block glyphs), and enough width. Returns a message or null.
-function qrTerminalWarning(qrWidth, cols) {
-  const issues = [];
-  if (typeof process.stdout.hasColors === "function" && !process.stdout.hasColors()) issues.push("no color support");
+// Two kinds of feedback for the share view:
+//  • "warn" (amber) — the QR genuinely won't SCAN here: no color (black/white contrast), a
+//    non-UTF-8 locale (the block glyphs), or the terminal is too narrow. Use the text link.
+//  • "note" (dim) — it scans, but this terminal draws block characters from the FONT (Terminal
+//    .app), so it looks seamy/rectangular. GPU terminals (Ghostty/Kitty/WezTerm/Alacritty) draw
+//    them geometrically = crisp. We only flag the known font-based one so it stays quiet elsewhere.
+function qrTerminalNote(qrWidth, cols) {
+  const blockers = [];
+  if (typeof process.stdout.hasColors === "function" && !process.stdout.hasColors()) blockers.push("no color support");
   const loc = (process.env.LC_ALL || process.env.LC_CTYPE || process.env.LANG || "").toLowerCase();
-  if (process.platform !== "darwin" && loc && !/utf-?8/.test(loc)) issues.push("non-UTF-8 locale");
-  if (qrWidth > cols) issues.push(`too narrow (QR needs ${qrWidth} cols, you have ${cols})`);
-  if (!issues.length) return null;
-  return `⚠ this terminal may not render the QR (${issues.join("; ")}) — copy the link below instead, or open in a wider UTF-8 color terminal.`;
+  if (process.platform !== "darwin" && loc && !/utf-?8/.test(loc)) blockers.push("non-UTF-8 locale");
+  if (qrWidth > cols) blockers.push(`too narrow — needs ${qrWidth} cols, you have ${cols}`);
+  if (blockers.length) return { tone: "warn", text: `⚠ this terminal may not render a scannable QR (${blockers.join("; ")}) — copy the link below.` };
+  if (process.env.TERM_PROGRAM === "Apple_Terminal") return { tone: "note", text: "Terminal.app draws block characters from the font, so this QR may look seamy (it still scans). Ghostty · Kitty · WezTerm render it crisply." };
+  return null;
 }
 
 function buildShare(s) {
   const cols = process.stdout.columns || 80;
   const uri = s.shareUri || "";
   const qr = qrToTerminal(uri, { ecl: "L", quiet: 2 }).replace(/\n$/, "").split("\n");
-  const warn = qrTerminalWarning(Math.max(...qr.map(visLen)), cols);
+  const note = qrTerminalNote(Math.max(...qr.map(visLen)), cols);
   // Back-hint lives in the title so it's visible even if the QR is taller than the terminal.
   const lines = [`${markStr(s)} ${A.bold}collateral${A.reset}  ${A.dim}share this config · press any key to go back${A.reset}`, ``];
-  if (warn) lines.push(...wrapAnsi(`${A.amber}${warn}${A.reset}`, Math.min(cols - 2, 76)), ``);
+  if (note) {
+    const c = note.tone === "warn" ? A.amber : A.dim;
+    lines.push(...wrapAnsi(`${c}${note.tone === "note" ? "note: " : ""}${note.text}${A.reset}`, Math.min(cols - 2, 76)), ``);
+  }
   for (const q of qr) lines.push(q);
   lines.push(``);
   for (const l of wrapAnsi(`${A.teal}${uri}${A.reset}`, Math.min(cols - 4, 72))) lines.push(l);
