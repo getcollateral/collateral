@@ -16,7 +16,7 @@ import { qrMatrix } from "./common/qr.js";
 import { vlessUriFromConfig, parseVlessUri } from "./common/config.js";
 import { FrameParser, encodeFrame, OPCODES } from "./common/ws-frame.js";
 import { renderFrame, hitTest } from "./tui.js";
-import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun } from "./common/tun.js";
+import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun, parseLinuxDefaultRoute, parseResolvConf, parseResolvectl, firstFreeTun } from "./common/tun.js";
 import { normalizeDomain } from "./provision/vps.js";
 
 const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
@@ -262,6 +262,23 @@ test("TUN: parses the default gateway/interface and picks a free utun", () => {
   assert.equal(dr.interface, "en0");
   assert.equal(firstFreeUtun("lo0 en0 utun0 utun1 utun2 utun3"), "utun123");
   assert.equal(firstFreeUtun("lo0 en0 utun123 utun124"), "utun125");
+});
+
+test("TUN(linux): parses `ip route show default` for gateway + interface", () => {
+  const r = parseLinuxDefaultRoute("default via 192.168.1.1 dev wlan0 proto dhcp metric 600");
+  assert.equal(r.gateway, "192.168.1.1");
+  assert.equal(r.interface, "wlan0");
+});
+
+test("TUN(linux): resolv.conf public resolvers, skipping the systemd-resolved stub", () => {
+  assert.deepEqual(parseResolvConf("nameserver 127.0.0.53\noptions edns0\nnameserver 8.8.8.8\n"), ["8.8.8.8"]);
+  // resolvectl fallback only takes IPs off DNS-Server lines, and drops private ones
+  assert.deepEqual(parseResolvectl("Link 2 (wlan0)\n  Current DNS Server: 1.1.1.1\n  DNS Servers: 1.1.1.1 192.168.1.1\n"), ["1.1.1.1"]);
+});
+
+test("TUN(linux): firstFreeTun picks the first unused collateralN", () => {
+  assert.equal(firstFreeTun("lo eth0 collateral0 collateral1"), "collateral2");
+  assert.equal(firstFreeTun("lo eth0 wlan0"), "collateral0");
 });
 
 test("TUI: setup view lists provisioning steps with state", () => {

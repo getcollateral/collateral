@@ -424,7 +424,7 @@ async function healthTick() {
 // Full-tunnel (TUN): true device-wide capture of all TCP via a utun, using our existing tunnel.
 // Mutually exclusive with the system SOCKS proxy. Needs admin (one GUI prompt) and macOS.
 async function toggleTun() {
-  if (!tun.supported()) return setMsg(A.red + "Full tunnel is macOS-only in this version." + A.reset);
+  if (!tun.supported()) return setMsg(A.red + "Full tunnel is available on macOS and Linux only (Windows is coming)." + A.reset);
   if (state.tunActive) {
     state.busy = true; state.busyText = "turning off full tunnel…"; draw();
     const ok = await tun.stopTun();

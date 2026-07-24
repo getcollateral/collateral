@@ -1,4 +1,4 @@
-// Device-wide TUN mode (macOS, v1). Instead of the best-effort system SOCKS proxy, this
+// Device-wide TUN mode (macOS + Linux). Instead of the best-effort system SOCKS proxy, this
 // captures *all* of the machine's TCP traffic at the IP layer and routes it through the same
 // VLESS tunnel - the way a real VPN client works. We don't reinvent the utun stack: we drive
 // `tun2socks` (a tiny, pinned, checksum-verified helper) which creates the utun and forwards
@@ -20,8 +20,12 @@
 //     and *watches the app's PID*: if the app exits or crashes, the script tears everything
 //     down. The app asks it to stop by touching a file - no root needed to turn it off.
 //
-// Known v1 limits: macOS + IPv4 only. TCP + UDP both relay through the tunnel (the server has a
-// dgram UDP relay). DNS is resolved directly (see above); IPv6 is not captured (v4-only TUN).
+// Known limits: macOS + Linux, IPv4 only. TCP + UDP both relay through the tunnel (the server has
+// a dgram UDP relay). DNS is resolved directly (see above); IPv6 is not captured (v4-only TUN).
+//
+// Linux uses the same design with different tools: tun2socks creates a `collateral0` tun, routing
+// is `ip route` (the same 0/1 + 128/1 split), the one admin prompt is `pkexec` (polkit), public
+// DNS upstreams are host-routed direct, and IPv6 is disabled via sysctl (restored on teardown).
 
 import os from "node:os";
 import fs from "node:fs";
@@ -56,7 +60,8 @@ const OWNER_FILE = path.join(DIR, "tun.owner");
 const SESSION_SH = path.join(DIR, "tun-session.sh");
 const LOG_FILE = path.join(DIR, "tun.log");
 
-export function supported() { return process.platform === "darwin"; }
+const IS_LINUX = process.platform === "linux";
+export function supported() { return process.platform === "darwin" || IS_LINUX; }
 
 // e.g. "darwin-arm64". Node's process.arch uses x64/arm64; releases use amd64/arm64.
 export function platArch() {
@@ -85,11 +90,37 @@ export function parseDefaultRoute(text) {
   return { gateway, interface: iface };
 }
 
+// Parse `ip route show default` → "default via 192.168.1.1 dev wlan0 proto dhcp metric 600".
+export function parseLinuxDefaultRoute(text) {
+  const gateway = (/\bvia\s+(\d+\.\d+\.\d+\.\d+)/.exec(text) || [])[1] || "";
+  const iface = (/\bdev\s+(\S+)/.exec(text) || [])[1] || "";
+  return { gateway, interface: iface };
+}
+
 // Parse `scutil --dns` for the public resolvers to keep reachable (host-routed direct).
 export function parsePublicDns(text) {
   const ips = new Set();
   for (const m of text.matchAll(/nameserver\[\d+\]\s*:\s*(\d+\.\d+\.\d+\.\d+)/g)) {
     if (!isPrivateIp(m[1])) ips.add(m[1]);
+  }
+  return [...ips];
+}
+
+// Linux: public resolvers from /etc/resolv.conf (skips the systemd-resolved 127.0.0.53 stub).
+export function parseResolvConf(text) {
+  const ips = new Set();
+  for (const m of (text || "").matchAll(/^\s*nameserver\s+(\d+\.\d+\.\d+\.\d+)/gm)) {
+    if (!isPrivateIp(m[1])) ips.add(m[1]);
+  }
+  return [...ips];
+}
+
+// Linux fallback: upstreams from `resolvectl status` (only DNS-Server lines, public IPs).
+export function parseResolvectl(text) {
+  const ips = new Set();
+  for (const line of (text || "").split("\n")) {
+    if (!/DNS Server/i.test(line)) continue;
+    for (const m of line.matchAll(/(\d+\.\d+\.\d+\.\d+)/g)) if (!isPrivateIp(m[1])) ips.add(m[1]);
   }
   return [...ips];
 }
@@ -101,16 +132,35 @@ export function firstFreeUtun(ifconfigList, base = 123, limit = 240) {
   return `utun${base}`;
 }
 
+// Linux: pick a `collateralN` name not already present in `ip link show`.
+export function firstFreeTun(ipLinkList, base = 0, limit = 99) {
+  const used = new Set((ipLinkList.match(/collateral\d+/g) || []).map((n) => Number(n.slice(10))));
+  for (let n = base; n <= limit; n++) if (!used.has(n)) return `collateral${n}`;
+  return `collateral${base}`;
+}
+
 async function sh(cmd, args) { return (await exec(cmd, args)).stdout; }
 
 export async function defaultGateway() {
+  if (IS_LINUX) {
+    try { return parseLinuxDefaultRoute(await sh("ip", ["route", "show", "default"])); }
+    catch { return { gateway: "", interface: "" }; }
+  }
   try { return parseDefaultRoute(await sh("route", ["-n", "get", "default"])); }
   catch { return { gateway: "", interface: "" }; }
 }
+async function linuxDnsServers() {
+  const out = new Set();
+  try { for (const ip of parseResolvConf(fs.readFileSync("/etc/resolv.conf", "utf8"))) out.add(ip); } catch {}
+  if (out.size === 0) { try { for (const ip of parseResolvectl(await sh("resolvectl", ["status"]))) out.add(ip); } catch {} }
+  return [...out];
+}
 export async function publicDnsServers() {
+  if (IS_LINUX) return linuxDnsServers();
   try { return parsePublicDns(await sh("scutil", ["--dns"])); } catch { return []; }
 }
-async function freeUtun() {
+async function freeDev() {
+  if (IS_LINUX) { try { return firstFreeTun(await sh("ip", ["link", "show"])); } catch { return "collateral0"; } }
   try { return firstFreeUtun(await sh("ifconfig", ["-l"])); } catch { return "utun123"; }
 }
 export async function resolveServerIp(host) {
@@ -199,6 +249,64 @@ done
 `;
 }
 
+// The Linux root session script. Same shape as the macOS one, but driven by `ip` instead of
+// `route`/`ifconfig`/`networksetup`, and IPv6 toggled via sysctl. Run as root via pkexec.
+export function linuxSessionScript({ dev, socksPort, serverIp, dnsIps, ownerPid }) {
+  const dnsAdd = dnsIps.map((d) => `ip route add ${d}/32 via "$GW" dev "$OIF" 2>/dev/null || ip route add ${d}/32 via "$GW" 2>/dev/null || true`).join("\n");
+  const dnsDel = dnsIps.map((d) => `ip route del ${d}/32 2>/dev/null || true`).join("\n  ");
+  return `#!/bin/bash
+# Collateral TUN session (Linux) - runs as root. Self-heals on exit.
+set -u
+BIN=${JSON.stringify(BIN)}
+DEV=${JSON.stringify(dev)}
+ADDR=${JSON.stringify(TUN_ADDR)}
+SERVER_IP=${JSON.stringify(serverIp)}
+OWNER=${JSON.stringify(String(ownerPid))}
+STOP=${JSON.stringify(STOP_FILE)}
+READY=${JSON.stringify(READY_FILE)}
+SOCKS=${JSON.stringify(String(socksPort))}
+rm -f "$STOP" "$READY"
+
+# default route BEFORE we add tun routes: gateway + outbound interface
+GW=$(ip route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="via"){print $(i+1);exit}}')
+OIF=$(ip route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="dev"){print $(i+1);exit}}')
+[ -z "$GW" ] && { echo "no default gateway"; exit 22; }
+V6WAS=$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null || echo 0)
+
+cleanup() {
+  [ -n "\${TPID:-}" ] && kill "$TPID" 2>/dev/null
+  ip route del "$SERVER_IP"/32 2>/dev/null || true
+  ${dnsDel || ": no public dns to unroute"}
+  sysctl -w net.ipv6.conf.all.disable_ipv6="$V6WAS" >/dev/null 2>&1 || true
+  # the /1 routes + the tun device disappear automatically when tun2socks exits
+  rm -f "$STOP" "$READY"
+}
+trap cleanup EXIT INT TERM
+
+"$BIN" --device "tun://$DEV" --proxy "socks5://127.0.0.1:$SOCKS" --loglevel warn &
+TPID=$!
+
+# wait for tun2socks to create the interface
+for i in $(seq 1 60); do ip link show "$DEV" >/dev/null 2>&1 && break; sleep 0.1; done
+ip link show "$DEV" >/dev/null 2>&1 || { echo "tun device $DEV never appeared"; exit 21; }
+ip addr add "$ADDR"/32 dev "$DEV" 2>/dev/null || true
+ip link set "$DEV" up || exit 23
+
+ip route add "$SERVER_IP"/32 via "$GW" dev "$OIF" 2>/dev/null || ip route add "$SERVER_IP"/32 via "$GW" 2>/dev/null || true
+${dnsAdd || ": no public dns to route"}
+ip route add 0.0.0.0/1 dev "$DEV"       # capture everything via the tun...
+ip route add 128.0.0.0/1 dev "$DEV"     # ...without touching the real default route
+# IPv6 leak guard: v4-only tun, so disable v6 while up (restored in cleanup)
+sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1 || true
+touch "$READY"
+
+# hold until: stop requested, app gone, or tun2socks died - then the trap heals the network
+while [ ! -f "$STOP" ] && kill -0 "$OWNER" 2>/dev/null && kill -0 "$TPID" 2>/dev/null; do
+  sleep 1
+done
+`;
+}
+
 // AppleScript string-escape (for embedding inside `do shell script "..."`).
 const asEsc = (s) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
@@ -206,24 +314,37 @@ const asEsc = (s) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 // for admin (GUI). Resolves when the interface is up and routed; rejects with the log tail on
 // failure. Reuses the existing tunnel - no server changes.
 export async function startTun({ socksPort, serverHost, onLog = () => {} }) {
-  if (!supported()) throw new Error("TUN mode is macOS-only in this version.");
+  if (!supported()) throw new Error("Device-wide tunnel is supported on macOS and Linux.");
   await ensureBinary(onLog);
   const serverIp = await resolveServerIp(serverHost);
-  const dev = await freeUtun();
+  const dev = await freeDev();
   const dnsIps = await publicDnsServers();
-  const service = await primaryService().catch(() => ""); // for IPv6 leak control (may be "")
   fs.mkdirSync(DIR, { recursive: true });
   for (const f of [STOP_FILE, READY_FILE]) { try { fs.unlinkSync(f); } catch {} }
   fs.writeFileSync(OWNER_FILE, String(process.pid));
-  fs.writeFileSync(SESSION_SH, sessionScript({ dev, socksPort, serverIp, dnsIps, service, ownerPid: process.pid }));
 
   onLog("requesting admin access (one prompt)…");
-  // No nohup: under `do shell script … with administrator privileges` there's no controlling
-  // terminal, so nohup errors ("can't detach from console"). Redirecting all three fds and
-  // backgrounding detaches it cleanly; with no tty there's no SIGHUP to survive, and the job
-  // is reparented to launchd when the privileged shell returns.
-  const shellCmd = `bash '${SESSION_SH}' </dev/null >'${LOG_FILE}' 2>&1 &`;
-  await exec("osascript", ["-e", `do shell script "${asEsc(shellCmd)}" with administrator privileges`]);
+  if (IS_LINUX) {
+    fs.writeFileSync(SESSION_SH, linuxSessionScript({ dev, socksPort, serverIp, dnsIps, ownerPid: process.pid }));
+    // pkexec pops the polkit prompt and runs the session as root; setsid + & detaches it so this
+    // call returns immediately and we then wait on the READY flag.
+    const inner = `setsid bash '${SESSION_SH}' </dev/null >'${LOG_FILE}' 2>&1 &`;
+    try { await exec("pkexec", ["bash", "-c", inner]); }
+    catch (e) {
+      const m = String((e && e.message) || e);
+      if (/not found|ENOENT/i.test(m)) throw new Error("pkexec not found - install polkit, or run the app under sudo");
+      throw new Error("admin authorization was cancelled or failed");
+    }
+  } else {
+    const service = await primaryService().catch(() => ""); // for IPv6 leak control (may be "")
+    fs.writeFileSync(SESSION_SH, sessionScript({ dev, socksPort, serverIp, dnsIps, service, ownerPid: process.pid }));
+    // No nohup: under `do shell script … with administrator privileges` there's no controlling
+    // terminal, so nohup errors ("can't detach from console"). Redirecting all three fds and
+    // backgrounding detaches it cleanly; with no tty there's no SIGHUP to survive, and the job
+    // is reparented to launchd when the privileged shell returns.
+    const shellCmd = `bash '${SESSION_SH}' </dev/null >'${LOG_FILE}' 2>&1 &`;
+    await exec("osascript", ["-e", `do shell script "${asEsc(shellCmd)}" with administrator privileges`]);
+  }
 
   // Wait for the session to signal readiness.
   for (let i = 0; i < 150; i++) {
@@ -253,8 +374,10 @@ export function requestStopSync() { try { fs.writeFileSync(STOP_FILE, "1"); } ca
 // Is a TUN session currently active (e.g. left over from a previous run)?
 export async function isActive() {
   if (!fs.existsSync(READY_FILE)) return false;
-  try { return (await sh("ifconfig", ["-l"])).includes("utun") && /utun\d+/.test(await sh("ifconfig", [])); }
-  catch { return fs.existsSync(READY_FILE); }
+  try {
+    if (IS_LINUX) return /collateral\d+/.test(await sh("ip", ["link", "show"]));
+    return /utun\d+/.test(await sh("ifconfig", []));
+  } catch { return fs.existsSync(READY_FILE); }
 }
 
 // Small CLI for recovery: `node common/tun.js status|down`.
