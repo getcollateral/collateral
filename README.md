@@ -100,9 +100,13 @@ the IP layer — no per-app cooperation, nothing to bypass. It reuses the exact 
   interface disappears), a host route for the **server's own IP** via your real gateway (so the
   tunnel's own packets don't loop), and host routes for any **public DNS** servers (so name
   resolution keeps working). If the helper dies for *any* reason, networking self-heals.
+- **IPv6 leak guard:** the TUN is v4-only, so IPv6 is disabled on the primary service while the
+  tunnel is up (restored on teardown) — otherwise v6 traffic would bypass it. DNS still resolves
+  **directly** for now (not a functional problem for SNI/IP-based filters); tunnelling DNS on
+  macOS needs a local forwarder (mDNSResponder doesn't follow the utun routes) — a follow-up.
 - **One admin prompt** (a macOS GUI dialog) starts a small root session that owns the helper and
-  **watches this app's PID** — if the app exits or crashes, it tears everything down. Turning it
-  off just touches a file (no second prompt).
+  **watches this app's PID** — if the app exits or crashes, it tears everything down (routes,
+  IPv6). Turning it off just touches a file (no second prompt).
 
 **TCP + UDP both work** through the tunnel (VLESS UDP over the same WebSocket), so QUIC/HTTP-3,
 games (Roblox etc.), and DNS route through your VM — not just TCP. **Limits (v1):** macOS +

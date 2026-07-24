@@ -31,6 +31,7 @@ import dns from "node:dns/promises";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { primaryService } from "./sysproxy.js";
 
 const exec = promisify(execFile);
 
@@ -145,7 +146,7 @@ export async function ensureBinary(onLog = () => {}) {
 
 // The root session script. It owns tun2socks, applies the routing, then blocks until asked to
 // stop / the app dies / tun2socks dies — and always tears down on the way out (trap on EXIT).
-function sessionScript({ dev, socksPort, serverIp, dnsIps, ownerPid }) {
+export function sessionScript({ dev, socksPort, serverIp, dnsIps, service, ownerPid }) {
   const dnsAdd = dnsIps.map((d) => `route -n add -host ${d} "$GW" 2>/dev/null || true`).join("\n  ");
   const dnsDel = dnsIps.map((d) => `route -n delete -host ${d} 2>/dev/null || true`).join("\n  ");
   return `#!/bin/bash
@@ -159,12 +160,14 @@ OWNER=${JSON.stringify(String(ownerPid))}
 STOP=${JSON.stringify(STOP_FILE)}
 READY=${JSON.stringify(READY_FILE)}
 SOCKS=${JSON.stringify(String(socksPort))}
+SERVICE=${JSON.stringify(service || "")}
 rm -f "$STOP" "$READY"
 
 cleanup() {
   [ -n "\${TPID:-}" ] && kill "$TPID" 2>/dev/null
   route -n delete -host "$SERVER_IP" 2>/dev/null || true
   ${dnsDel || ": no public dns to unroute"}
+  [ -n "$SERVICE" ] && networksetup -setv6automatic "$SERVICE" 2>/dev/null || true  # restore IPv6
   # the /1 routes + the utun itself disappear automatically when tun2socks exits
   rm -f "$STOP" "$READY"
 }
@@ -183,6 +186,10 @@ route -n add -host "$SERVER_IP" "$GW"            # tunnel's own packets bypass t
 ${dnsAdd || ": no public dns to route"}
 route -n add -net 0.0.0.0/1 "$ADDR"              # capture everything else via the utun...
 route -n add -net 128.0.0.0/1 "$ADDR"            # ...without ever touching the real default route
+# IPv6: the TUN is v4-only, so disable v6 on the primary service — otherwise v6 traffic bypasses
+# the tunnel. cleanup() restores it to automatic. (DNS stays direct; tunnelling it needs a local
+# forwarder, a separate TODO — macOS mDNSResponder doesn't follow the utun routes.)
+[ -n "$SERVICE" ] && networksetup -setv6off "$SERVICE" 2>/dev/null || true
 touch "$READY"
 
 # hold until: stop requested, app gone, or tun2socks died — then the trap heals the network
@@ -204,10 +211,11 @@ export async function startTun({ socksPort, serverHost, onLog = () => {} }) {
   const serverIp = await resolveServerIp(serverHost);
   const dev = await freeUtun();
   const dnsIps = await publicDnsServers();
+  const service = await primaryService().catch(() => ""); // for IPv6 leak control (may be "")
   fs.mkdirSync(DIR, { recursive: true });
   for (const f of [STOP_FILE, READY_FILE]) { try { fs.unlinkSync(f); } catch {} }
   fs.writeFileSync(OWNER_FILE, String(process.pid));
-  fs.writeFileSync(SESSION_SH, sessionScript({ dev, socksPort, serverIp, dnsIps, ownerPid: process.pid }));
+  fs.writeFileSync(SESSION_SH, sessionScript({ dev, socksPort, serverIp, dnsIps, service, ownerPid: process.pid }));
 
   onLog("requesting admin access (one prompt)…");
   // No nohup: under `do shell script … with administrator privileges` there's no controlling
