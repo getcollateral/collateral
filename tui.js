@@ -838,4 +838,12 @@ function main() {
   })();
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
+// Run main() when this file IS the entry point. Resolve symlinks on both sides — when launched
+// via the `bin` (npx/global install), process.argv[1] is a symlink to this file, so a plain
+// string compare fails and the app would exit silently.
+function isEntrypoint() {
+  if (!process.argv[1]) return false;
+  try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); }
+  catch { return false; }
+}
+if (isEntrypoint()) main();
