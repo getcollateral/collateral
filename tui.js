@@ -19,6 +19,7 @@ import { buildTokenDeepLink } from "./provision/deeplink.js";
 import { deployToAccount } from "./provision/deploy.js";
 import { provisionVps } from "./provision/vps.js";
 import { setSocks, socksEnabled, primaryService, supported as sysproxySupported } from "./common/sysproxy.js";
+import * as tun from "./common/tun.js";
 
 const VPS_STEPS = [
   ["connect", "Connect to your VM over SSH"],
@@ -60,7 +61,7 @@ const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "�
 const SEP = "\x00sep\x00"; // sentinel: a separator row
 const w = (s) => process.stdout.write(s);
 
-const state = { ...loadConfig(), connected: false, socksPort: null, exitIP: null, busy: false, busyText: "", view: "main", hover: null, systemProxy: false, netService: null, msg: "Set your worker + key, then press c to connect." };
+const state = { ...loadConfig(), connected: false, socksPort: null, exitIP: null, busy: false, busyText: "", view: "main", hover: null, systemProxy: false, tunActive: false, netService: null, msg: "Set your worker + key, then press c to connect." };
 let socks = null, spinI = 0, inPrompt = false, renderTimer = null, lastBuilt = null, quitting = false;
 
 const isWsUrl = (s) => /^wss?:\/\/[^\s]+$/i.test(s || "");
@@ -211,12 +212,14 @@ function buildBox(s) {
   );
 
   const dw = s.systemProxy ? `${A.green}on${A.reset}` : `${A.muted}off${A.reset}`;
+  const tw = s.tunActive ? `${A.green}on${A.reset}` : `${A.muted}off${A.reset}`;
   const menu = [
     [["s", `${A.bold}first-time setup${A.reset}`], ["c", s.connected ? "disconnect" : "connect"]],
     [["t", "test connection"], ["w", "set worker address"]],
     [["u", "set access key"], ["g", "generate new key"]],
     [["k", "cloudflare token link"], ["p", "proxy setup help"]],
-    [["d", `device-wide: ${dw}`], ["q", "quit"]],
+    [["d", `system proxy: ${dw}`], ["f", `full tunnel: ${tw}`]],
+    [["q", "quit"]],
   ];
   for (const [l, r] of menu) {
     const i = body.length;
@@ -304,10 +307,15 @@ async function connect() {
 }
 
 async function disconnect() {
-  // Turn off device-wide FIRST — leaving the system proxy pointed at a dead tunnel would
-  // break the user's internet.
+  // Turn off device-wide capture FIRST — leaving the system proxy or the TUN pointed at a dead
+  // tunnel would break the user's internet.
+  if (state.tunActive) {
+    state.busy = true; state.busyText = "turning off full tunnel…"; draw();
+    try { await tun.stopTun(); } catch {}
+    state.tunActive = false; state.busy = false;
+  }
   if (state.systemProxy && state.netService) {
-    state.busy = true; state.busyText = "turning off device-wide…"; draw();
+    state.busy = true; state.busyText = "turning off system proxy…"; draw();
     try { await setSocks(state.netService, false); } catch {}
     state.systemProxy = false; state.busy = false;
   }
@@ -316,13 +324,52 @@ async function disconnect() {
   setMsg("Disconnected.");
 }
 
+// Full-tunnel (TUN): true device-wide capture of all TCP via a utun, using our existing tunnel.
+// Mutually exclusive with the system SOCKS proxy. Needs admin (one GUI prompt) and macOS.
+async function toggleTun() {
+  if (!tun.supported()) return setMsg(A.red + "Full tunnel is macOS-only in this version." + A.reset);
+  if (state.tunActive) {
+    state.busy = true; state.busyText = "turning off full tunnel…"; draw();
+    const ok = await tun.stopTun();
+    state.tunActive = false; state.busy = false;
+    return setMsg(ok ? "Full tunnel off — networking restored." : A.red + "Couldn't confirm teardown — check `node common/tun.js status`." + A.reset);
+  }
+  if (!state.connected) return setMsg(A.red + "Connect first — the full tunnel routes every app through the tunnel." + A.reset);
+  if (state.systemProxy) { try { await setSocks(state.netService, false); } catch {} state.systemProxy = false; } // exclusive
+  const go = await confirmWord([
+    `${A.amber}${A.bold}Full tunnel (device-wide TUN)${A.reset}`,
+    ``,
+    `This captures ${A.bold}all TCP traffic${A.reset} from every app at the network layer —`,
+    `the real VPN-style path, not the best-effort system proxy.`,
+    ``,
+    `• Needs ${A.bold}admin${A.reset} once (a macOS password dialog).`,
+    `• First time, downloads a small verified helper (~4 MB).`,
+    `• ${A.dim}UDP/QUIC isn't relayed yet (server is TCP-only) — browsers fall back to TCP.${A.reset}`,
+    `• Turns off automatically on disconnect, quit, or if this app crashes.`,
+    ``,
+    `Type ${A.amber}yes${A.reset} to continue, or enter to cancel.`,
+  ], "yes");
+  if (!go) { draw(); return setMsg("Full tunnel cancelled."); }
+  state.busy = true; state.busyText = "starting full tunnel…"; draw();
+  try {
+    const host = new URL(state.workerUrl).host;
+    await tun.startTun({ socksPort: state.socksPort, serverHost: host, onLog: (m) => { state.busyText = m; draw(); } });
+    state.tunActive = true; state.busy = false;
+    setMsg(A.green + "Full tunnel ON — every app's TCP now routes through the server." + A.reset + `  ${A.dim}(press f to turn off)${A.reset}`);
+  } catch (e) {
+    state.tunActive = false; state.busy = false;
+    setMsg(A.red + `Full tunnel failed: ${e.message || e}` + A.reset);
+  }
+}
+
 async function toggleSystemProxy() {
   if (!sysproxySupported()) return setMsg(A.red + "Device-wide is macOS-only here — set your OS proxy manually (press p)." + A.reset);
   if (!state.netService) state.netService = await primaryService();
   if (!state.netService) return setMsg(A.red + "Couldn't find your network service." + A.reset);
   const turnOn = !state.systemProxy;
   if (turnOn && !state.connected) return setMsg(A.red + "Connect first — device-wide routes every app through the tunnel." + A.reset);
-  state.busy = true; state.busyText = turnOn ? "enabling device-wide (may ask for your password)…" : "disabling device-wide…"; draw();
+  if (turnOn && state.tunActive) { try { await tun.stopTun(); } catch {} state.tunActive = false; } // exclusive with full tunnel
+  state.busy = true; state.busyText = turnOn ? "enabling system proxy (may ask for your password)…" : "disabling system proxy…"; draw();
   const ok = await setSocks(state.netService, turnOn, "127.0.0.1", state.socksPort || 1080);
   state.busy = false;
   if (!ok) return setMsg(A.red + "Couldn't change the system proxy (cancelled or failed)." + A.reset);
@@ -343,6 +390,24 @@ async function test() {
     state.busy = false;
     setMsg(A.red + `Test failed: ${e.message || e}` + A.reset);
   }
+}
+
+// Generating a new key orphans the current one: the server keeps expecting the OLD key until
+// you redeploy. That's easy to trigger by accident and locks you out, so require a confirm.
+async function regenKey() {
+  const ok = await confirmWord([
+    `${A.amber}${A.bold}Generate a new access key?${A.reset}`,
+    ``,
+    `current key  ${A.dim}${state.uuid ? ellip(state.uuid, 40) : "(none)"}${A.reset}`,
+    ``,
+    `This ${A.bold}replaces${A.reset} your key. Your server still expects the current one, so you'll`,
+    `${A.bold}lose access until you redeploy${A.reset} (press ${A.amber}s${A.reset}) — which now uploads the new key.`,
+    ``,
+    `Type ${A.amber}yes${A.reset} to generate a new key, or press enter to cancel.`,
+  ], "yes");
+  if (!ok) { draw(); return setMsg("Kept your current key."); }
+  state.uuid = crypto.randomUUID(); saveConfig({ uuid: state.uuid });
+  setMsg(A.green + "New key generated." + A.reset + ` ${A.dim}Press s → redeploy to upload it to your server.${A.reset}`);
 }
 
 function openUrl(u) {
@@ -439,6 +504,7 @@ async function setupVps() {
   try {
     const res = await provisionVps({
       host, user, keyPath,
+      uuid: isUuid(state.uuid) ? state.uuid : undefined, // keep the client key as source of truth — upload it
       log: (m) => { try { fs.appendFileSync(logFile, m); } catch {} },
       onStep: (name, status, note) => {
         const st = state.steps.find((x) => x.name === name);
@@ -520,11 +586,10 @@ async function handleKey(k) {
     case "q": return quit();
     case "s": return chooseSetup();
     case "d": return toggleSystemProxy();
+    case "f": return toggleTun();
     case "c": return state.connected ? disconnect() : connect();
     case "t": return test();
-    case "g":
-      state.uuid = crypto.randomUUID(); saveConfig({ uuid: state.uuid });
-      return setMsg("New key generated — set it as USER_UUID on your worker, then redeploy.");
+    case "g": return regenKey();
     case "k":
       openUrl(buildTokenDeepLink());
       return setMsg("Opened the Cloudflare token page in your browser.");
@@ -593,6 +658,9 @@ let cleaned = false;
 function cleanup() {
   if (cleaned) return; cleaned = true;
   if (renderTimer) clearInterval(renderTimer);
+  // Signal the root TUN session to tear down (restores routing). Synchronous file touch, safe
+  // here; the session also self-heals via its owner-PID watchdog if this never runs.
+  if (state.tunActive) tun.requestStopSync();
   if (socks) { try { socks.close(); } catch {} }
   try { process.stdin.setRawMode(false); } catch {}
   // Synchronous write so the terminal is restored even though process.exit() follows —
@@ -603,7 +671,12 @@ function cleanup() {
 async function quit() {
   if (quitting) return;
   quitting = true;
-  // Best-effort: don't leave the user's traffic pointed at a dead proxy on exit.
+  // Best-effort: don't leave the user's traffic pointed at a dead proxy/TUN on exit.
+  if (state.tunActive) {
+    state.busy = true; state.busyText = "restoring network…"; draw();
+    try { await tun.stopTun(); } catch {}
+    state.tunActive = false;
+  }
   if (state.systemProxy && state.netService) {
     state.busy = true; state.busyText = "restoring network…"; draw();
     try { await setSocks(state.netService, false); } catch {}
@@ -636,6 +709,11 @@ function main() {
     state.systemProxy = await socksEnabled(state.netService);
     if (state.systemProxy && !state.connected) {
       state.msg = A.red + "Device-wide proxy is ON but not connected — press c to connect, or d to turn it off." + A.reset;
+    }
+    // A leftover TUN session from a crashed run would strand traffic — surface it so f turns it off.
+    if (tun.supported() && await tun.isActive().catch(() => false)) {
+      state.tunActive = true;
+      state.msg = A.red + "A full tunnel from a previous run is still active — press f to turn it off." + A.reset;
     }
     draw();
   })();

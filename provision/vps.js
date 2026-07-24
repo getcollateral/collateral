@@ -114,7 +114,10 @@ else
   else sudo sh -c 'iptables-save > /etc/sysconfig/iptables' 2>/dev/null || true; fi
 fi
 sudo systemctl daemon-reload
-sudo systemctl enable --now collateral
+sudo systemctl enable collateral
+# restart (not 'enable --now'): on a redeploy the service is already running, and --now would
+# NOT reload it — leaving a stale process with the OLD USER_UUID/code. restart always reloads.
+sudo systemctl restart collateral
 sudo systemctl restart caddy || sudo systemctl start caddy
 echo COLLATERAL_SETUP_OK
 `;
@@ -149,14 +152,18 @@ echo "== dns ${domain} =="; getent hosts ${domain} 2>&1 || echo "getent failed"`
 }
 
 // Provision the VM and return the client endpoint. onStep(name, status, note) drives the UI.
-export async function provisionVps({ host, user = "ubuntu", keyPath, onStep = () => {}, log = () => {} }) {
+// Pass `uuid` to install a specific access key (the client key is the source of truth, so a
+// redeploy uploads it and stays in sync); omit it for a brand-new setup to mint a fresh one.
+export async function provisionVps({ host, user = "ubuntu", keyPath, uuid: keyArg, onStep = () => {}, log = () => {} }) {
   onStep("connect", "run");
   log(`[connect] ssh ${user}@${host}\n`);
   try { await ssh(host, user, keyPath, "true", null, 20000); }
   catch (e) { throw new Error(`can't SSH in as ${user}@${host} (${(e.stderr || e.message || "").trim().split("\n").pop()})`); }
   onStep("connect", "ok", `${user}@${host}`);
 
-  const uuid = crypto.randomUUID();
+  const isUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s || "");
+  const uuid = isUuid(keyArg) ? keyArg : crypto.randomUUID();
+  log(isUuid(keyArg) ? "using your existing access key\n" : "minting a new access key\n");
   const wsPath = "/" + crypto.randomBytes(6).toString("hex");
   const domain = `${host}.sslip.io`; // <ip>.sslip.io resolves to <ip>; no domain to buy
   log(`domain: ${domain}\n`);

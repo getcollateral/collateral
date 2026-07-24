@@ -13,6 +13,7 @@ import {
 import { FrameParser, encodeFrame, OPCODES } from "./common/ws-frame.js";
 import { isIPv4Literal, isCloudflareV4, nat64Address, normalizeNat64Prefix } from "./common/nat64.js";
 import { renderFrame, hitTest } from "./tui.js";
+import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun } from "./common/tun.js";
 
 const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
 
@@ -177,6 +178,35 @@ test("TUI: help view renders proxy instructions", () => {
 test("TUI: main menu offers first-time setup", () => {
   const f = strip(renderFrame({ view: "main", connected: false, workerUrl: "", uuid: "", msg: "" }));
   assert.match(f, /s {2}first-time setup/);
+});
+
+test("TUI: menu exposes both device-wide modes (system proxy + full tunnel)", () => {
+  const f = strip(renderFrame({ view: "main", connected: true, socksPort: 1080, workerUrl: "wss://x", uuid: "u", msg: "", systemProxy: false, tunActive: true }));
+  assert.match(f, /d {2}system proxy:/);
+  assert.match(f, /f {2}full tunnel: on/);   // reflects tunActive
+});
+
+test("TUN: platform asset name + pinned download URL", () => {
+  assert.match(platArch(), /^(darwin|linux|win32)-(amd64|arm64)$/);
+  assert.match(assetUrl(), /tun2socks\/releases\/download\/v2\.7\.0\/tun2socks-\w+-\w+\.zip$/);
+});
+
+test("TUN: only public DNS resolvers get host-routed (LAN stays on the subnet route)", () => {
+  assert.ok(isPrivateIp("192.168.1.1"));
+  assert.ok(isPrivateIp("10.0.0.5"));
+  assert.ok(isPrivateIp("172.20.9.9"));
+  assert.ok(isPrivateIp("127.0.0.1"));
+  assert.ok(!isPrivateIp("1.1.1.1"));
+  assert.ok(!isPrivateIp("8.8.8.8"));
+  assert.deepEqual(parsePublicDns("nameserver[0] : 192.168.1.1\nnameserver[0] : 1.1.1.1\nnameserver[1] : 8.8.8.8"), ["1.1.1.1", "8.8.8.8"]);
+});
+
+test("TUN: parses the default gateway/interface and picks a free utun", () => {
+  const dr = parseDefaultRoute("   gateway: 10.0.0.1\n  interface: en0\n");
+  assert.equal(dr.gateway, "10.0.0.1");
+  assert.equal(dr.interface, "en0");
+  assert.equal(firstFreeUtun("lo0 en0 utun0 utun1 utun2 utun3"), "utun123");
+  assert.equal(firstFreeUtun("lo0 en0 utun123 utun124"), "utun125");
 });
 
 test("TUI: setup view lists deploy steps with state", () => {

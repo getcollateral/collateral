@@ -41,7 +41,8 @@ light: filled = connected, empty `[ ]` = idle, spinner = busy.
   │ t  test connection       w  set worker address    │
   │ u  set access key        g  generate new key      │
   │ k  cloudflare token link p  proxy setup help      │
-  │ d  device-wide: off      q  quit                  │
+  │ d  system proxy: off     f  full tunnel: off      │
+  │ q  quit                                           │
   ├──────────────────────────────────────────────────┤
   │ › Connected — traffic exits via 161.33.237.170.   │
   ╰──────────────────────────────────────────────────╯
@@ -50,25 +51,46 @@ light: filled = connected, empty `[ ]` = idle, spinner = busy.
 **Click** any menu item — the whole row is the hit target and highlights under the cursor on
 hover, so it's obvious what's clickable — or use the keys: **s** first-time setup · **c**
 connect/disconnect · **t** test (shows the live exit IP) · **w**/**u** set worker + key · **g**
-generate a key · **k** Cloudflare token page · **d** device-wide on/off · **p** proxy help ·
-**q** quit (works even mid-connect). Config persists in `~/.collateral-config.json`. Mouse
-tracking hard-locks the frame against scrolling; hold Option to select text.
+generate a key · **k** Cloudflare token page · **d** system proxy on/off · **f** full tunnel
+(TUN) on/off · **p** proxy help · **q** quit (works even mid-connect). Config persists in
+`~/.collateral-config.json`. Mouse tracking hard-locks the frame against scrolling; hold Option
+to select text.
 
-### Device-wide (`d`, macOS)
+There are **two** device-wide modes; both only turn on while connected and turn **off
+automatically on disconnect, on quit, and on crash**, so a dead tunnel can never strand your
+traffic. They're mutually exclusive.
+
+### `d` — system SOCKS proxy (macOS, best-effort)
 
 **d** flips the macOS **system SOCKS proxy** to point at the tunnel, so *every* app that
-honors it is routed. It only turns on while connected, and it's turned **off automatically on
-disconnect and on quit** so a dead tunnel can never strand your traffic. Changing network
-settings needs admin, so it may show a password prompt. If the app is force-killed while it's
-on, turn it back off with **d** (or in System Settings → Network → Proxies).
+honors it is routed. Changing network settings needs admin (password prompt). The client
+speaks **both SOCKS5 and SOCKS4/4a** — required because macOS "use system proxy" mode makes
+Firefox/Zen send **SOCKS4** (macOS records no version, Mozilla bug 1700857), which a SOCKS5-only
+proxy would reject. But Apple treats the system SOCKS proxy as **best-effort** (apps may bypass
+it), which is why the real device-wide option is the full tunnel below.
 
-Note the client speaks **both SOCKS5 and SOCKS4/4a** — required because macOS "use system
-proxy" mode makes Firefox/Zen send **SOCKS4** (macOS records no version, Mozilla bug 1700857),
-which a SOCKS5-only proxy would reject. Even so, Apple treats the system SOCKS proxy as
-**best-effort** (it may bypass it opportunistically), so a **manual SOCKS v5** config in the
-app (with "Proxy DNS when using SOCKS v5" ticked) is the most reliable option. For true
-VPN-style capture of *all* traffic incl. UDP/QUIC and DNS, you'd embed a **TUN client**
-(sing-box) — the approach every serious tool uses, and a later step here.
+### `f` — full tunnel / TUN (macOS, real device-wide)
+
+**f** brings up a real **VPN-style TUN interface** that captures *all* of the machine's TCP at
+the IP layer — no per-app cooperation, nothing to bypass. It reuses the exact same tunnel
+(VLESS · WebSocket · TLS · server); we just add a new front door:
+
+- A tiny, **pinned + SHA-256-verified** helper (`tun2socks`, ~4 MB, downloaded once to
+  `~/.collateral/bin/`, never committed) creates a `utun` and forwards every flow into our
+  existing SOCKS5 client on loopback. So the server and protocol are unchanged.
+- **Crash-safe routing:** we never edit your real default route. We add two `/1` routes bound
+  to the `utun` (they out-specific the default, and the kernel deletes them the instant the
+  interface disappears), a host route for the **server's own IP** via your real gateway (so the
+  tunnel's own packets don't loop), and host routes for any **public DNS** servers (so name
+  resolution keeps working). If the helper dies for *any* reason, networking self-heals.
+- **One admin prompt** (a macOS GUI dialog) starts a small root session that owns the helper and
+  **watches this app's PID** — if the app exits or crashes, it tears everything down. Turning it
+  off just touches a file (no second prompt).
+
+**Limits (v1):** macOS + IPv4 only, and **UDP/QUIC is not relayed** because the server is
+TCP-only — browsers fall back to TCP (HTTP/3 → HTTP/2), but pure-UDP apps won't work until we
+add a UDP relay server-side. **Recovery:** if something ever gets stuck, `node common/tun.js
+down` requests teardown and `node common/tun.js status` shows the current state.
 
 ### First-time setup (`s`) — the app provisions your server
 
@@ -196,9 +218,11 @@ the path. So NAT64 is **off by default** and opt-in:
   violates Cloudflare's Self-Serve Subscription Agreement §2.2.1(j) and is
   actively fingerprinted and account-banned. Deploying is a conscious act you take
   on a **throwaway account** that hosts nothing else — never automated here.
-- **No system-wide TUN / no mobile builds.** The client uses a SOCKS5 inbound
-  (same data path, no privileges). Production would embed **sing-box/libbox** for a
-  real TUN + `uTLS` fingerprint mimicry.
+- **Device-wide TUN is TCP-only, macOS-only (v1).** Press **f** for a real `utun` that
+  captures all TCP device-wide (via a pinned `tun2socks` helper + our existing client — see
+  above). **UDP/QUIC isn't relayed yet** because the server is TCP-only; a UDP relay
+  (server-side dgram + VLESS UDP) and Linux/Windows routing are the follow-ups. No mobile
+  builds. Production would additionally embed **libbox** + `uTLS` fingerprint mimicry.
 - **No uTLS / ECH / REALITY.** Those are hardening layers (Phase 2+), not needed to
   prove the mechanism.
 
