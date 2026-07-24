@@ -57,6 +57,12 @@ generate a key · **k** Cloudflare token page · **d** system proxy on/off · **
 (works even mid-connect). Config persists in `~/.collateral-config.json`. Mouse tracking
 hard-locks the frame against scrolling; hold Option to select text.
 
+While connected, a background **health check** keeps the status honest: if the server becomes
+unreachable it shows **reconnecting…** and flips back to **connected** on its own when it
+recovers (each app connection opens its own WebSocket, so the tunnel self-heals — no manual
+reconnect). It refreshes the exit IP each check and needs two misses before flagging, to ride
+out transient blips.
+
 ### Onboard another Mac — no typing (`x` → `i`)
 
 Move a config between two machines with the camera, no SSH and no re-entering keys:

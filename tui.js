@@ -64,8 +64,10 @@ const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "�
 const SEP = "\x00sep\x00"; // sentinel: a separator row
 const w = (s) => process.stdout.write(s);
 
-const state = { ...loadConfig(), connected: false, socksPort: null, exitIP: null, busy: false, busyText: "", view: "main", hover: null, systemProxy: false, tunActive: false, netService: null, msg: "Set your worker + key, then press c to connect." };
+const state = { ...loadConfig(), connected: false, reconnecting: false, socksPort: null, exitIP: null, busy: false, busyText: "", view: "main", hover: null, systemProxy: false, tunActive: false, netService: null, msg: "Set your worker + key, then press c to connect." };
 let socks = null, spinI = 0, inPrompt = false, renderTimer = null, lastBuilt = null, quitting = false;
+let healthTimer = null, healthFails = 0;
+const HEALTH_OK_MS = Number(process.env.COLLATERAL_HEALTH_MS) || 30000; // healthy poll interval (test knob)
 
 const isWsUrl = (s) => /^wss?:\/\/[^\s]+$/i.test(s || "");
 const isUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s || "");
@@ -197,6 +199,7 @@ function buildBox(s) {
 
   // main view — header: brand + subtitle + right-aligned status word (the [•] mark = state)
   const statusWord = s.busy ? A.amber + s.busyText + A.reset
+    : s.connected && s.reconnecting ? A.amber + "reconnecting…" + A.reset
     : s.connected ? A.green + "connected" + A.reset : A.muted + "disconnected" + A.reset;
   const gap = Math.max(1, innerW - visLen(brand) - visLen(statusWord));
   body.push(brand + " ".repeat(gap) + statusWord);
@@ -370,7 +373,8 @@ async function connect() {
     // Actually verify the tunnel works before claiming connected.
     state.busyText = "testing tunnel…"; draw();
     const ip = await getExitIP(state.socksPort);
-    state.exitIP = ip; state.connected = true; state.busy = false;
+    state.exitIP = ip; state.connected = true; state.reconnecting = false; state.busy = false;
+    startHealthMonitor();
     setMsg(A.green + `Connected — traffic exits via ${ip}.` + A.reset);
   } catch (e) {
     if (socks) { try { socks.close(); } catch {} }
@@ -393,9 +397,37 @@ async function disconnect() {
     try { await setSocks(state.netService, false); } catch {}
     state.systemProxy = false; state.busy = false;
   }
+  stopHealthMonitor();
   if (socks) { try { socks.close(); } catch {} }
-  socks = null; state.connected = false; state.socksPort = null; state.exitIP = null;
+  socks = null; state.connected = false; state.reconnecting = false; state.socksPort = null; state.exitIP = null;
   setMsg("Disconnected.");
+}
+
+// Health monitor: while connected, periodically verify the tunnel still reaches the internet.
+// Each app connection opens its own WebSocket, so the tunnel already self-heals when the server
+// returns — this keeps the STATUS honest (shows "reconnecting…" during an outage, flips back to
+// "connected" when it recovers) and refreshes the exit IP. Needs two consecutive failures before
+// flagging (rides out transient blips); polls slowly when healthy, retries fast while down.
+function startHealthMonitor() { healthFails = 0; scheduleHealth(HEALTH_OK_MS); }
+function stopHealthMonitor() { if (healthTimer) { clearTimeout(healthTimer); healthTimer = null; } healthFails = 0; }
+function scheduleHealth(ms) { if (healthTimer) clearTimeout(healthTimer); healthTimer = setTimeout(healthTick, ms); }
+async function healthTick() {
+  healthTimer = null;
+  if (!state.connected) return;
+  if (state.busy || inPrompt || !socks) return scheduleHealth(Math.min(6000, HEALTH_OK_MS)); // defer during manual ops
+  try {
+    const ip = await Promise.race([
+      getExitIP(state.socksPort),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 9000)),
+    ]);
+    state.exitIP = ip; healthFails = 0;
+    if (state.reconnecting) { state.reconnecting = false; setMsg(A.green + `Tunnel recovered — exits via ${ip}.` + A.reset); }
+    scheduleHealth(HEALTH_OK_MS);
+  } catch {
+    healthFails++;
+    if (healthFails >= 2 && !state.reconnecting) { state.reconnecting = true; setMsg(A.amber + "Tunnel unreachable — reconnecting automatically…" + A.reset); }
+    scheduleHealth(healthFails >= 2 ? Math.min(8000, HEALTH_OK_MS) : Math.min(4000, HEALTH_OK_MS));
+  }
 }
 
 // Full-tunnel (TUN): true device-wide capture of all TCP via a utun, using our existing tunnel.
@@ -734,6 +766,7 @@ let cleaned = false;
 function cleanup() {
   if (cleaned) return; cleaned = true;
   if (renderTimer) clearInterval(renderTimer);
+  stopHealthMonitor();
   // Signal the root TUN session to tear down (restores routing). Synchronous file touch, safe
   // here; the session also self-heals via its owner-PID watchdog if this never runs.
   if (state.tunActive) tun.requestStopSync();
