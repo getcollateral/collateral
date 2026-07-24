@@ -313,9 +313,15 @@ export function qrMatrix(text, ecl = "L", forceMask = -1) {
   return buildMatrix(version, codewords, level, forceMask);
 }
 
-// Public: render a matrix to a scannable terminal string using half-block characters and
-// explicit black-on-white colors (so it scans regardless of the terminal theme). `quiet` is
-// the light margin in modules (the spec wants 4; 2 is usually enough and saves space).
+// Public: render a matrix to a scannable terminal string. Each character cell holds two stacked
+// modules (top/bottom). Explicit black-on-white so it scans in any theme. `quiet` is the light
+// margin in modules (spec wants 4; 2 usually suffices and saves space).
+//
+// Crispness note: a *solid* cell (both modules the same colour) is drawn as a background-filled
+// space with NO glyph — terminals fill the cell background edge-to-edge, so these tile with zero
+// seams even on terminals that render block glyphs from the font (Terminal.app). Only the cells
+// where the two modules differ use a half-block `▀`. On GPU terminals that draw blocks
+// geometrically (Ghostty/Kitty/Alacritty/WezTerm) it's pixel-perfect either way.
 export function qrToTerminal(text, { ecl = "L", quiet = 2 } = {}) {
   const m = qrMatrix(text, ecl);
   const n = m.length;
@@ -326,9 +332,8 @@ export function qrToTerminal(text, { ecl = "L", quiet = 2 } = {}) {
     let line = "";
     for (let x = 0; x < size; x++) {
       const top = at(x, y), bot = y + 1 < size ? at(x, y + 1) : false;
-      const fg = top ? "30" : "97";   // dark module -> black, light -> bright white (upper half)
-      const bg = bot ? "40" : "107";  // dark module -> black bg, light -> bright white (lower half)
-      line += `\x1b[${fg};${bg}m▀`;
+      if (top === bot) line += `\x1b[${top ? "40" : "107"}m `;                       // solid cell: bg fill, no glyph
+      else line += `\x1b[${top ? "30" : "97"};${bot ? "40" : "107"}m▀`;             // transition: half-block
     }
     out += line + "\x1b[0m\n";
   }
