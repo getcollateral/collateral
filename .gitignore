@@ -8,3 +8,6 @@ dist/
 
 # downloaded helper binaries are cached in ~/.collateral/, never in the repo
 bin/
+
+# private developer / prototype notes — not part of the public docs
+NOTES.md
