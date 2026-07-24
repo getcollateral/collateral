@@ -10,6 +10,7 @@
 
 import http from "node:http";
 import net from "node:net";
+import dgram from "node:dgram";
 import { fileURLToPath } from "node:url";
 import { FrameParser, encodeFrame, computeAcceptKey, OPCODES } from "./common/ws-frame.js";
 import { parseVlessHeader, buildVlessResponse, uuidToBytes, uuidEquals, bytesToUuid } from "./common/vless.js";
@@ -46,18 +47,25 @@ export function startWorker({ port = 8787, host = "127.0.0.1", uuid, quiet = fal
   return server;
 }
 
+const UDP_IDLE_MS = 60000; // close an idle UDP association after this long (no close signal in UDP)
+
 function handleSession(socket, head, expected, quiet) {
   const parser = new FrameParser();
-  let upstream = null;
+  let mode = null;         // "tcp" | "udp"
+  let upstream = null;     // TCP: net.Socket
+  let udp = null;          // UDP: { sock, host, port, bump }
   let headerParsed = false;
   let closed = false;
+  let idleTimer = null;
 
   const closeAll = () => {
     if (closed) return;
     closed = true;
+    if (idleTimer) clearTimeout(idleTimer);
     try { socket.write(encodeFrame(OPCODES.CLOSE, Buffer.alloc(0))); } catch {}
     try { socket.destroy(); } catch {}
     if (upstream) try { upstream.destroy(); } catch {}
+    if (udp) try { udp.sock.close(); } catch {}
   };
 
   const handle = (messages) => {
@@ -78,17 +86,36 @@ function handleSession(socket, head, expected, quiet) {
           return closeAll();
         }
         if (!uuidEquals(hdr.uuid, expected)) return closeAll(); // bad auth -> drop
-        if (hdr.command !== 1) return closeAll();                // TCP only; connect() has no UDP
 
-        upstream = net.connect({ host: hdr.host, port: hdr.port });
-        // Writes before 'connect' are buffered by Node, preserving order.
-        try { socket.write(encodeFrame(OPCODES.BIN, Buffer.from(buildVlessResponse()))); } catch {}
-        if (hdr.payload.length) upstream.write(Buffer.from(hdr.payload));
-        upstream.on("data", (d) => { try { socket.write(encodeFrame(OPCODES.BIN, d)); } catch {} });
-        upstream.on("close", closeAll);
-        upstream.on("error", (e) => { if (!quiet) console.error("[worker-shim] upstream error:", e.code || e.message); closeAll(); });
-      } else if (upstream && !upstream.destroyed) {
+        if (hdr.command === 1) {
+          mode = "tcp";
+          upstream = net.connect({ host: hdr.host, port: hdr.port });
+          // Writes before 'connect' are buffered by Node, preserving order.
+          try { socket.write(encodeFrame(OPCODES.BIN, Buffer.from(buildVlessResponse()))); } catch {}
+          if (hdr.payload.length) upstream.write(Buffer.from(hdr.payload));
+          upstream.on("data", (d) => { try { socket.write(encodeFrame(OPCODES.BIN, d)); } catch {} });
+          upstream.on("close", closeAll);
+          upstream.on("error", (e) => { if (!quiet) console.error("[worker-shim] upstream error:", e.code || e.message); closeAll(); });
+        } else if (hdr.command === 2) {
+          // UDP relay. One WebSocket carries one destination (host:port). Each subsequent WS
+          // message is a datagram to send; each datagram received comes back as a WS message
+          // (no length prefix / no response header — WebSocket already preserves boundaries).
+          mode = "udp";
+          const sock = dgram.createSocket(hdr.atype === 3 ? "udp6" : "udp4");
+          const bump = () => { if (idleTimer) clearTimeout(idleTimer); idleTimer = setTimeout(closeAll, UDP_IDLE_MS); };
+          udp = { sock, host: hdr.host, port: hdr.port, bump };
+          sock.on("message", (msg) => { try { socket.write(encodeFrame(OPCODES.BIN, msg)); } catch {} bump(); });
+          sock.on("error", (e) => { if (!quiet) console.error("[worker-shim] udp error:", e.code || e.message); closeAll(); });
+          if (hdr.payload.length) { try { sock.send(Buffer.from(hdr.payload), hdr.port, hdr.host); } catch {} }
+          bump();
+        } else {
+          return closeAll(); // MUX / unknown command unsupported
+        }
+      } else if (mode === "tcp" && upstream && !upstream.destroyed) {
         upstream.write(Buffer.from(m.payload));
+      } else if (mode === "udp" && udp) {
+        try { udp.sock.send(Buffer.from(m.payload), udp.port, udp.host); } catch {}
+        udp.bump();
       }
     }
   };

@@ -9,7 +9,9 @@ import {
   bytesToUuid,
   uuidEquals,
   buildVlessResponse,
+  ipv6ToBytes,
 } from "./common/vless.js";
+import { parseSocksUdp } from "./client.js";
 import { FrameParser, encodeFrame, OPCODES } from "./common/ws-frame.js";
 import { isIPv4Literal, isCloudflareV4, nat64Address, normalizeNat64Prefix } from "./common/nat64.js";
 import { renderFrame, hitTest } from "./tui.js";
@@ -56,6 +58,34 @@ test("VLESS header round-trips (ipv4) and preserves trailing payload", () => {
 
 test("VLESS response header is [0,0]", () => {
   assert.deepEqual(Array.from(buildVlessResponse()), [0, 0]);
+});
+
+test("VLESS header round-trips a UDP command with an IPv6 destination", () => {
+  const uuid = uuidToBytes(UUID);
+  const h = encodeVlessHeader({ uuid, host: "2606:4700:4700::1111", port: 53, command: 2 });
+  const p = parseVlessHeader(h);
+  assert.equal(p.command, 2);     // UDP
+  assert.equal(p.atype, 3);       // IPv6
+  assert.equal(p.port, 53);
+  assert.equal(p.host, "2606:4700:4700:0:0:0:0:1111");
+});
+
+test("ipv6ToBytes handles :: compression and rejects junk", () => {
+  assert.deepEqual(Array.from(ipv6ToBytes("::1")), [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+  assert.deepEqual(Array.from(ipv6ToBytes("2606:4700:4700::1111")).slice(0, 4), [0x26, 0x06, 0x47, 0x00]);
+  assert.throws(() => ipv6ToBytes("1:2:3"));   // too short without ::
+  assert.throws(() => ipv6ToBytes("gg::1"));   // invalid hex
+});
+
+test("SOCKS5 UDP request parses the destination and preserves the reply header prefix", () => {
+  const dport = Buffer.alloc(2); dport.writeUInt16BE(53);
+  const req = Buffer.concat([Buffer.from([0, 0, 0, 1, 8, 8, 8, 8]), dport, Buffer.from("query")]);
+  const p = parseSocksUdp(req);
+  assert.equal(p.host, "8.8.8.8");
+  assert.equal(p.port, 53);
+  assert.equal(p.data.toString(), "query");
+  assert.deepEqual(Array.from(p.hdrPrefix), [0, 0, 0, 1, 8, 8, 8, 8, 0, 53]); // echoed verbatim on replies
+  assert.equal(parseSocksUdp(Buffer.from([0, 0, 1, 1])), null);               // FRAG != 0 unsupported
 });
 
 test("parseVlessHeader rejects a truncated buffer", () => {

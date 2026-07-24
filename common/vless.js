@@ -33,6 +33,30 @@ export function uuidEquals(a, b) {
 
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 
+// Parse an IPv6 literal (incl. "::" compression, optional %zone) to 16 bytes. Pure, no deps.
+export function ipv6ToBytes(host) {
+  host = String(host).split("%")[0];
+  let head, tail;
+  if (host.includes("::")) {
+    const [h, t] = host.split("::");
+    if (host.indexOf("::") !== host.lastIndexOf("::")) throw new Error("invalid IPv6");
+    head = h ? h.split(":") : [];
+    tail = t ? t.split(":") : [];
+  } else {
+    head = host.split(":"); tail = [];
+  }
+  const total = head.length + tail.length;
+  if (total > 8 || (!host.includes("::") && total !== 8)) throw new Error("invalid IPv6");
+  const groups = [...head, ...Array(8 - total).fill("0"), ...tail];
+  const b = new Uint8Array(16);
+  for (let i = 0; i < 8; i++) {
+    const v = parseInt(groups[i] || "0", 16);
+    if (!/^[0-9a-fA-F]{1,4}$/.test(groups[i] || "0") || v > 0xffff) throw new Error("invalid IPv6");
+    b[i * 2] = v >> 8; b[i * 2 + 1] = v & 0xff;
+  }
+  return b;
+}
+
 export function encodeVlessHeader({ uuid, host, port, command = 1 }) {
   if (!(uuid instanceof Uint8Array) || uuid.length !== 16) throw new Error("uuid must be 16 bytes");
   let atype, addr;
@@ -40,6 +64,9 @@ export function encodeVlessHeader({ uuid, host, port, command = 1 }) {
   if (m) {
     atype = 1;
     addr = Uint8Array.from([+m[1], +m[2], +m[3], +m[4]]);
+  } else if (host.includes(":")) {
+    atype = 3; // IPv6
+    addr = ipv6ToBytes(host);
   } else {
     atype = 2; // domain
     const h = te.encode(host);

@@ -8,8 +8,26 @@
 // Uses Node's built-in global WebSocket (no dependencies).
 
 import net from "node:net";
+import dgram from "node:dgram";
 import { fileURLToPath } from "node:url";
 import { encodeVlessHeader, uuidToBytes } from "./common/vless.js";
+
+// Parse a SOCKS5 UDP request datagram: [RSV(2)][FRAG(1)][ATYP][ADDR][PORT(2)][DATA].
+// Returns { atyp, host, port, hdrPrefix, data } or null. hdrPrefix is the [RSV FRAG ATYP ADDR
+// PORT] bytes echoed verbatim on reply datagrams (same destination). FRAG != 0 is unsupported.
+export function parseSocksUdp(buf) {
+  if (buf.length < 5 || buf[2] !== 0x00) return null;
+  const atyp = buf[3];
+  let portOff, host;
+  if (atyp === 0x01) { host = `${buf[4]}.${buf[5]}.${buf[6]}.${buf[7]}`; portOff = 8; }
+  else if (atyp === 0x03) { const len = buf[4]; host = buf.subarray(5, 5 + len).toString("utf8"); portOff = 5 + len; }
+  else if (atyp === 0x04) { const p = []; for (let i = 0; i < 8; i++) p.push(buf.readUInt16BE(4 + i * 2).toString(16)); host = p.join(":"); portOff = 20; }
+  else return null;
+  if (buf.length < portOff + 2) return null;
+  const port = buf.readUInt16BE(portOff);
+  const dataOff = portOff + 2;
+  return { atyp, host, port, hdrPrefix: Buffer.concat([Buffer.from([0, 0, 0]), buf.subarray(3, dataOff)]), data: buf.subarray(dataOff) };
+}
 
 export function startClient({ socksPort = 1080, host = "127.0.0.1", workerUrl, uuid, quiet = false } = {}) {
   if (!workerUrl) throw new Error("startClient: workerUrl is required");
@@ -29,11 +47,13 @@ export function startClient({ socksPort = 1080, host = "127.0.0.1", workerUrl, u
     });
   });
 
-  // SOCKS5: negotiate no-auth, then read the CONNECT request.
+  // SOCKS5: negotiate no-auth, then read the request (CONNECT=1 for TCP, UDP ASSOCIATE=3).
   function socks5(sock, greeting) {
     sock.write(Buffer.from([0x05, 0x00])); // version 5, no auth
     sock.once("data", (req) => {
-      if (req[0] !== 0x05 || req[1] !== 0x01) {
+      if (req[0] !== 0x05) { sock.write(Buffer.from([0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0])); return sock.destroy(); }
+      if (req[1] === 0x03) return socks5Udp(sock);   // UDP ASSOCIATE
+      if (req[1] !== 0x01) {                          // only CONNECT + UDP ASSOCIATE
         sock.write(Buffer.from([0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0]));
         return sock.destroy();
       }
@@ -117,6 +137,66 @@ export function startClient({ socksPort = 1080, host = "127.0.0.1", workerUrl, u
     };
     ws.onerror = () => { try { sock.destroy(); } catch {} };
     sock.on("close", () => { try { ws.close(); } catch {} });
+  }
+
+  // A VLESS-UDP tunnel to ONE destination. Each ws.send is one datagram; each ws message
+  // received is one return datagram (WebSocket preserves boundaries, so no length framing).
+  function openUdpSession(destHost, destPort, onDatagram) {
+    const ws = new WebSocket(workerUrl);
+    ws.binaryType = "arraybuffer";
+    let wsOpen = false;
+    const buffered = [];
+    ws.onopen = () => {
+      ws.send(encodeVlessHeader({ uuid: uuidBytes, host: destHost, port: destPort, command: 2 }));
+      wsOpen = true;
+      for (const d of buffered) ws.send(d);
+      buffered.length = 0;
+    };
+    ws.onmessage = (ev) => { onDatagram(Buffer.from(ev.data)); };
+    ws.onerror = () => { try { ws.close(); } catch {} };
+    return {
+      send(payload) { if (wsOpen && ws.readyState === 1) ws.send(payload); else buffered.push(payload); },
+      close() { try { ws.close(); } catch {} },
+    };
+  }
+
+  // SOCKS5 UDP ASSOCIATE: bind a loopback UDP relay, tell the client its address, then bridge
+  // each datagram to a per-destination VLESS-UDP tunnel. The association lives as long as the
+  // TCP control socket stays open (RFC 1928). This is what lets tun2socks carry UDP/QUIC/games.
+  function socks5Udp(ctrl) {
+    const relay = dgram.createSocket("udp4");
+    const sessions = new Map(); // "host:port" -> { session, hdrPrefix, app, idle, bump }
+    const closeAll = () => {
+      try { relay.close(); } catch {}
+      for (const s of sessions.values()) { clearTimeout(s.idle); try { s.session.close(); } catch {} }
+      sessions.clear();
+    };
+    relay.on("error", closeAll);
+    relay.on("message", (msg, rinfo) => {
+      const p = parseSocksUdp(msg);
+      if (!p) return;
+      const key = `${p.host}:${p.port}`;
+      let s = sessions.get(key);
+      if (!s) {
+        s = { hdrPrefix: p.hdrPrefix, app: rinfo, idle: null };
+        s.bump = () => { clearTimeout(s.idle); s.idle = setTimeout(() => { try { s.session.close(); } catch {} sessions.delete(key); }, 60000); };
+        s.session = openUdpSession(p.host, p.port, (datagram) => {
+          try { relay.send(Buffer.concat([s.hdrPrefix, datagram]), s.app.port, s.app.address); } catch {}
+          s.bump();
+        });
+        sessions.set(key, s);
+      }
+      s.app = rinfo;      // reply to wherever the app last sent from
+      s.bump();
+      s.session.send(p.data);
+    });
+    relay.bind(0, "127.0.0.1", () => {
+      const { port } = relay.address();
+      // reply: VER=5 REP=0 RSV=0 ATYP=1 BND.ADDR=127.0.0.1 BND.PORT
+      try { ctrl.write(Buffer.from([0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1, (port >> 8) & 0xff, port & 0xff])); } catch {}
+    });
+    ctrl.on("close", closeAll);
+    ctrl.on("error", closeAll);
   }
 
   server.listen(socksPort, host, () => {

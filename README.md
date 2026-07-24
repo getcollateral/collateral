@@ -87,10 +87,11 @@ the IP layer — no per-app cooperation, nothing to bypass. It reuses the exact 
   **watches this app's PID** — if the app exits or crashes, it tears everything down. Turning it
   off just touches a file (no second prompt).
 
-**Limits (v1):** macOS + IPv4 only, and **UDP/QUIC is not relayed** because the server is
-TCP-only — browsers fall back to TCP (HTTP/3 → HTTP/2), but pure-UDP apps won't work until we
-add a UDP relay server-side. **Recovery:** if something ever gets stuck, `node common/tun.js
-down` requests teardown and `node common/tun.js status` shows the current state.
+**TCP + UDP both work** through the tunnel (VLESS UDP over the same WebSocket), so QUIC/HTTP-3,
+games (Roblox etc.), and DNS route through your VM — not just TCP. **Limits (v1):** macOS +
+IPv4 only, and UDP works on the **self-hosted VM** path but not on Cloudflare Workers (their
+`connect()` is TCP-only). **Recovery:** if something ever gets stuck, `node common/tun.js down`
+requests teardown and `node common/tun.js status` shows the current state.
 
 ### First-time setup (`s`) — the app provisions your server
 
@@ -103,8 +104,8 @@ app **SSHes in and sets everything up**: it bundles our server into one file, in
 opens the firewall, runs it as a background service, and connects. One-time manual step: open
 **ports 80 + 443** in the VM's cloud-console security list. This is the real path — a VM
 reaches every site (incl. Cloudflare), has no connection cap, no ToS problems, and still
-looks like HTTPS on 443 so filters pass it. (The server is currently TCP-only; UDP/QUIC relay
-is a follow-up — the VM *can* do it, unlike Workers.)
+looks like HTTPS on 443 so filters pass it. It relays both **TCP and UDP** (QUIC/HTTP-3, games,
+DNS), which Cloudflare Workers can't do.
 
 **2. Cloudflare Workers.** The quick demo path (pre-filled token → auto-deploy), but limited:
 can't reach Cloudflare-fronted sites, no UDP, and it violates Cloudflare's ToS.
@@ -183,7 +184,8 @@ user, importable into sing-box/Xray for interop.
 - **Pillar 1 (architecture):** the two-TLS model is real here. The worker/shim
   terminates the *outer* WebSocket TLS and forwards opaque bytes to the
   destination; for an HTTPS site those bytes are the user's *inner* TLS, which the
-  worker never reads. `connect()` is TCP-only (no UDP/QUIC) — matching the platform.
+  worker never reads. The self-hosted shim relays **TCP (`net`) and UDP (`dgram`)**
+  via VLESS command 1/2; a Cloudflare Worker's `connect()` is TCP-only.
 - **Pillar 2 (onboarding):** `provision/` builds the pre-filled least-privilege
   token link and runs the read-only verify/enumerate steps. The deploy step is left
   to `wrangler` by design (see safety note).
@@ -218,11 +220,11 @@ the path. So NAT64 is **off by default** and opt-in:
   violates Cloudflare's Self-Serve Subscription Agreement §2.2.1(j) and is
   actively fingerprinted and account-banned. Deploying is a conscious act you take
   on a **throwaway account** that hosts nothing else — never automated here.
-- **Device-wide TUN is TCP-only, macOS-only (v1).** Press **f** for a real `utun` that
-  captures all TCP device-wide (via a pinned `tun2socks` helper + our existing client — see
-  above). **UDP/QUIC isn't relayed yet** because the server is TCP-only; a UDP relay
-  (server-side dgram + VLESS UDP) and Linux/Windows routing are the follow-ups. No mobile
-  builds. Production would additionally embed **libbox** + `uTLS` fingerprint mimicry.
+- **Device-wide TUN is macOS-only (v1).** Press **f** for a real `utun` that captures traffic
+  device-wide (via a pinned `tun2socks` helper + our existing client — see above). Carries
+  **TCP and UDP** (QUIC, games, DNS) on the self-hosted VM path. Linux/Windows routing and
+  mobile builds are follow-ups. Production would additionally embed **libbox** + `uTLS`
+  fingerprint mimicry.
 - **No uTLS / ECH / REALITY.** Those are hardening layers (Phase 2+), not needed to
   prove the mechanism.
 
