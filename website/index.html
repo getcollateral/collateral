@@ -36,6 +36,8 @@ button{font-family:inherit}
 .faq-btn:hover,.faq-btn:hover .faq-q{color:#FFAF00 !important}
 .fl:hover{color:#FFAF00 !important}
 .tui-k{color:#FFAF00}
+/* unified lowercase display type (headings, labels, buttons) — body prose keeps its capitals */
+h1,h2,h3,.faq-q,.btn-amber,.btn-out,.fl,.nl,.lc{text-transform:lowercase}
 </style>
 </head>
 <body>
@@ -62,7 +64,7 @@ button{font-family:inherit}
 
 <header id="hero" style="max-width:1200px;margin:0 auto;width:100%;padding:clamp(48px,7vw,100px) clamp(20px,5vw,64px) clamp(44px,6vw,80px);display:flex;gap:clamp(32px,5vw,72px);flex-wrap:wrap;align-items:center">
   <div style="flex:1 1 430px;min-width:300px">
-    <div style="display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:#00AFAF">
+    <div style="display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;text-transform:lowercase;color:#00AFAF">
       <span style="width:8px;height:8px;background:#FFAF00;display:inline-block"></span>Open source &#183; bring your own server
     </div>
     <h1 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:clamp(38px,5.3vw,68px);line-height:1.03;letter-spacing:-.03em;margin:22px 0 0;color:#fff">The open internet, on infrastructure you own.</h1>
@@ -120,20 +122,20 @@ button{font-family:inherit}
 <div style="height:1px;background:rgba(230,230,230,.08);max-width:1200px;margin:0 auto"></div>
 
 <section id="why" style="max-width:1200px;margin:0 auto;width:100%;padding:clamp(60px,8vw,110px) clamp(20px,5vw,64px)">
-  <div style="display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:#00AFAF"><span style="width:8px;height:8px;background:#FFAF00;display:inline-block"></span>Why</div>
+  <div style="display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;text-transform:lowercase;color:#00AFAF"><span style="width:8px;height:8px;background:#FFAF00;display:inline-block"></span>Why</div>
   <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:clamp(28px,3.8vw,44px);line-height:1.08;letter-spacing:-.025em;margin:16px 0 0;color:#fff;max-width:24ch">You shouldn&#8217;t have to hand your traffic to a stranger.</h2>
   <p style="margin:16px 0 0;font-size:clamp(15px,1.5vw,17px);line-height:1.6;color:#8A8A8A;max-width:56ch">The usual ways out of a locked-down network share one flaw &#8212; something in the middle that everyone else is on too.</p>
   <div style="margin-top:34px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1px;background:rgba(230,230,230,.09);border:1px solid rgba(230,230,230,.09);border-radius:12px;overflow:hidden">
     <div style="background:#0C0E12;padding:26px 24px 30px;display:flex;flex-direction:column;gap:12px">
-      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#D75F5F">Shared VPNs</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;text-transform:lowercase;color:#D75F5F">Shared VPNs</span>
       <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B8">Thousands of people behind one endpoint. Easy to fingerprint, easy to block &#8212; and they log your traffic anyway.</p>
     </div>
     <div style="background:#0C0E12;padding:26px 24px 30px;display:flex;flex-direction:column;gap:12px">
-      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#D75F5F">Paid tunnels</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;text-transform:lowercase;color:#D75F5F">Paid tunnels</span>
       <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B8">A monthly bill to route your packets through a stranger&#8217;s server &#8212; and it gets blocked all the same.</p>
     </div>
     <div style="background:rgba(255,175,0,.045);padding:26px 24px 30px;display:flex;flex-direction:column;gap:12px">
-      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#FFAF00">Collateral</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;text-transform:lowercase;color:#FFAF00">Collateral</span>
       <p style="margin:0;font-size:15px;line-height:1.6;color:#E6E6E6">Your server. Your IP. Your traffic. No shared endpoint, no one in the middle &#8212; nothing common to log or ban.</p>
     </div>
   </div>
@@ -142,7 +144,7 @@ button{font-family:inherit}
 <div style="height:1px;background:rgba(230,230,230,.08);max-width:1200px;margin:0 auto"></div>
 
 <section id="how" style="max-width:1200px;margin:0 auto;width:100%;padding:clamp(60px,8vw,110px) clamp(20px,5vw,64px)">
-  <div style="display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:#00AFAF"><span style="width:8px;height:8px;background:#FFAF00;display:inline-block"></span>How it works</div>
+  <div style="display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;text-transform:lowercase;color:#00AFAF"><span style="width:8px;height:8px;background:#FFAF00;display:inline-block"></span>How it works</div>
   <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:clamp(28px,3.8vw,44px);line-height:1.08;letter-spacing:-.025em;margin:16px 0 0;color:#fff;max-width:22ch">Two commands. About two minutes.</h2>
   <div style="margin-top:34px;display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1px;background:rgba(230,230,230,.09);border:1px solid rgba(230,230,230,.09);border-radius:12px;overflow:hidden">
     <div style="background:#0C0E12;padding:28px 24px 32px;display:flex;flex-direction:column;gap:14px">
@@ -163,16 +165,16 @@ button{font-family:inherit}
   </div>
 
   <div style="margin-top:26px;background:#0D0F13;border:1px solid rgba(230,230,230,.09);border-radius:12px;padding:clamp(22px,3vw,38px)">
-    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#6C6E76;margin-bottom:22px">packet flow</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.16em;text-transform:lowercase;color:#6C6E76;margin-bottom:22px">packet flow</div>
     <div style="overflow-x:auto;padding-bottom:4px">
       <div style="display:flex;align-items:stretch;gap:0;min-width:660px">
         <div style="flex:0 0 auto;width:150px;display:flex;flex-direction:column;align-items:flex-start;gap:7px;padding:16px;border:1px solid rgba(230,230,230,.14);border-radius:10px;background:#101217">
-          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:#6C6E76">you</span>
-          <span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:15px;color:#E6E6E6">your Mac</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:lowercase;color:#6C6E76">you</span>
+          <span class="lc" style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:15px;color:#E6E6E6">your Mac</span>
           <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A8A8A">TUN &#183; all apps</span>
         </div>
         <div style="flex:1 1 0;min-width:120px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:0 6px">
-          <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#FFAF00;margin-bottom:9px;white-space:nowrap">encrypted &#183; :443</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.1em;text-transform:lowercase;color:#FFAF00;margin-bottom:9px;white-space:nowrap">encrypted &#183; :443</div>
           <div style="position:relative;width:100%;height:2px;background:linear-gradient(90deg,rgba(255,175,0,.55),rgba(0,175,175,.55))">
             <span style="position:absolute;left:-6px;top:50%;transform:translateY(-50%);width:6px;height:6px;background:#FFAF00;box-shadow:0 0 8px #FFAF00;animation:packet 2.2s linear infinite"></span>
             <span style="position:absolute;left:-6px;top:50%;transform:translateY(-50%);width:6px;height:6px;background:#FFAF00;box-shadow:0 0 8px #FFAF00;animation:packet 2.2s linear infinite;animation-delay:.73s"></span>
@@ -181,12 +183,12 @@ button{font-family:inherit}
           <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6C6E76;margin-top:9px;white-space:nowrap">VLESS / WS / TLS</div>
         </div>
         <div style="flex:0 0 auto;width:150px;display:flex;flex-direction:column;align-items:flex-start;gap:7px;padding:16px;border:1px solid rgba(0,175,175,.28);border-radius:10px;background:#101217">
-          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:#6C6E76">your VM</span>
-          <span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:15px;color:#E6E6E6">Oracle Free</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:lowercase;color:#6C6E76">your VM</span>
+          <span class="lc" style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:15px;color:#E6E6E6">Oracle Free</span>
           <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#00AFAF">stealth proxy</span>
         </div>
         <div style="flex:1 1 0;min-width:120px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:0 6px">
-          <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#6C6E76;margin-bottom:9px;white-space:nowrap">open internet</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.1em;text-transform:lowercase;color:#6C6E76;margin-bottom:9px;white-space:nowrap">open internet</div>
           <div style="position:relative;width:100%;height:2px;background:rgba(230,230,230,.2)">
             <span style="position:absolute;left:-6px;top:50%;transform:translateY(-50%);width:6px;height:6px;background:#00AFAF;box-shadow:0 0 8px #00AFAF;animation:packet 2.2s linear infinite;animation-delay:.36s"></span>
             <span style="position:absolute;left:-6px;top:50%;transform:translateY(-50%);width:6px;height:6px;background:#00AFAF;box-shadow:0 0 8px #00AFAF;animation:packet 2.2s linear infinite;animation-delay:1.1s"></span>
@@ -194,8 +196,8 @@ button{font-family:inherit}
           <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6C6E76;margin-top:9px;white-space:nowrap">TCP + UDP</div>
         </div>
         <div style="flex:0 0 auto;width:150px;display:flex;flex-direction:column;align-items:flex-start;gap:7px;padding:16px;border:1px solid rgba(230,230,230,.14);border-radius:10px;background:#101217">
-          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:#6C6E76">destination</span>
-          <span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:15px;color:#E6E6E6">the open web</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:lowercase;color:#6C6E76">destination</span>
+          <span class="lc" style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:15px;color:#E6E6E6">the open web</span>
           <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8A8A8A">unfiltered</span>
         </div>
       </div>
@@ -206,7 +208,7 @@ button{font-family:inherit}
 <div style="height:1px;background:rgba(230,230,230,.08);max-width:1200px;margin:0 auto"></div>
 
 <section id="features" style="max-width:1200px;margin:0 auto;width:100%;padding:clamp(60px,8vw,110px) clamp(20px,5vw,64px)">
-  <div style="display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:#00AFAF"><span style="width:8px;height:8px;background:#FFAF00;display:inline-block"></span>Features</div>
+  <div style="display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;text-transform:lowercase;color:#00AFAF"><span style="width:8px;height:8px;background:#FFAF00;display:inline-block"></span>Features</div>
   <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:clamp(28px,3.8vw,44px);line-height:1.08;letter-spacing:-.025em;margin:16px 0 0;color:#fff;max-width:20ch">Yours, end to end.</h2>
   <div style="margin-top:34px;display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:1px;background:rgba(230,230,230,.09);border:1px solid rgba(230,230,230,.09);border-radius:12px;overflow:hidden">
     <div class="feat-card" style="background:#0C0E12;padding:26px 24px 28px;display:flex;flex-direction:column;gap:13px;min-height:212px;transition:background .15s ease">
@@ -242,19 +244,19 @@ button{font-family:inherit}
   </div>
   <div style="margin-top:30px;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:24px 28px">
     <div style="display:flex;flex-direction:column;gap:7px;padding-top:16px;border-top:1px solid rgba(230,230,230,.1)">
-      <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#E6E6E6;font-weight:500"><span style="color:#00AFAF">+</span> One-scan onboarding</span>
+      <span class="lc" style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#E6E6E6;font-weight:500"><span style="color:#00AFAF">+</span> One-scan onboarding</span>
       <span style="font-size:13px;color:#8A8A8A;line-height:1.5">Share your config to another Mac with a QR you scan from the camera.</span>
     </div>
     <div style="display:flex;flex-direction:column;gap:7px;padding-top:16px;border-top:1px solid rgba(230,230,230,.1)">
-      <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#E6E6E6;font-weight:500"><span style="color:#00AFAF">+</span> Auto-reconnect</span>
+      <span class="lc" style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#E6E6E6;font-weight:500"><span style="color:#00AFAF">+</span> Auto-reconnect</span>
       <span style="font-size:13px;color:#8A8A8A;line-height:1.5">Self-heals when the server blips. You stay online without noticing.</span>
     </div>
     <div style="display:flex;flex-direction:column;gap:7px;padding-top:16px;border-top:1px solid rgba(230,230,230,.1)">
-      <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#E6E6E6;font-weight:500"><span style="color:#00AFAF">+</span> Zero dependencies</span>
+      <span class="lc" style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#E6E6E6;font-weight:500"><span style="color:#00AFAF">+</span> Zero dependencies</span>
       <span style="font-size:13px;color:#8A8A8A;line-height:1.5">Pure Node built-ins. Nothing to npm install, nothing to audit.</span>
     </div>
     <div style="display:flex;flex-direction:column;gap:7px;padding-top:16px;border-top:1px solid rgba(230,230,230,.1)">
-      <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#E6E6E6;font-weight:500"><span style="color:#00AFAF">+</span> Clickable TUI</span>
+      <span class="lc" style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#E6E6E6;font-weight:500"><span style="color:#00AFAF">+</span> Clickable TUI</span>
       <span style="font-size:13px;color:#8A8A8A;line-height:1.5">Mouse + keyboard, scroll-locked like vim and htop.</span>
     </div>
   </div>
@@ -263,14 +265,14 @@ button{font-family:inherit}
 <div style="height:1px;background:rgba(230,230,230,.08);max-width:1200px;margin:0 auto"></div>
 
 <section id="stealth" style="max-width:1200px;margin:0 auto;width:100%;padding:clamp(60px,8vw,110px) clamp(20px,5vw,64px)">
-  <div style="display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:#00AFAF"><span style="width:8px;height:8px;background:#FFAF00;display:inline-block"></span>On the wire</div>
+  <div style="display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;text-transform:lowercase;color:#00AFAF"><span style="width:8px;height:8px;background:#FFAF00;display:inline-block"></span>On the wire</div>
   <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:clamp(28px,3.8vw,44px);line-height:1.08;letter-spacing:-.025em;margin:16px 0 0;color:#fff;max-width:24ch">It looks like a website. On the wire, it is one.</h2>
   <p style="margin:18px 0 0;font-size:clamp(15px,1.5vw,17px);line-height:1.65;color:#B4B4B8;max-width:66ch">Every byte leaves your machine as VLESS wrapped in WebSocket wrapped in TLS, on port 443 &#8212; the same envelope as any HTTPS page load. There&#8217;s no signature to match and no handshake that stands out, so a network filter sees a visit to a website and waves it through. An active probe that knocks on the door gets exactly what it expects: an innocuous decoy page.</p>
   <div style="margin-top:32px;display:flex;gap:20px;flex-wrap:wrap">
     <div style="flex:1 1 300px;background:#0D0F13;border:1px solid rgba(230,230,230,.1);border-radius:12px;overflow:hidden">
       <div style="display:flex;align-items:center;gap:9px;padding:13px 18px;border-bottom:1px solid rgba(230,230,230,.08)">
         <span style="width:8px;height:8px;border-radius:50%;background:#6C6E76;display:inline-block"></span>
-        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#8A8A8A">what the network sees</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:lowercase;color:#8A8A8A">what the network sees</span>
       </div>
       <div style="padding:20px 18px;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.85;color:#B4B4B8">
         <div><span style="color:#6C6E76">&#8594;</span> GET / HTTP/1.1</div>
@@ -282,7 +284,7 @@ button{font-family:inherit}
     <div style="flex:1 1 300px;background:#0D0F13;border:1px solid rgba(0,175,175,.22);border-radius:12px;overflow:hidden">
       <div style="display:flex;align-items:center;gap:9px;padding:13px 18px;border-bottom:1px solid rgba(230,230,230,.08)">
         <span style="width:8px;height:8px;border-radius:50%;background:#5FAF5F;box-shadow:0 0 9px #5FAF5F;display:inline-block"></span>
-        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#00AFAF">what you&#8217;re actually doing</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:lowercase;color:#00AFAF">what you&#8217;re actually doing</span>
       </div>
       <div style="padding:20px 18px;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.85;color:#B4B4B8">
         <div><span style="color:#FFAF00">&#187;</span> full-tunnel &#183; <span style="color:#E6E6E6">TCP + UDP</span></div>
@@ -297,15 +299,15 @@ button{font-family:inherit}
 <div style="height:1px;background:rgba(230,230,230,.08);max-width:1200px;margin:0 auto"></div>
 
 <section id="start" style="max-width:1200px;margin:0 auto;width:100%;padding:clamp(60px,8vw,110px) clamp(20px,5vw,64px)">
-  <div style="display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:#00AFAF"><span style="width:8px;height:8px;background:#FFAF00;display:inline-block"></span>Get started</div>
+  <div style="display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;text-transform:lowercase;color:#00AFAF"><span style="width:8px;height:8px;background:#FFAF00;display:inline-block"></span>Get started</div>
   <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:clamp(28px,3.8vw,44px);line-height:1.08;letter-spacing:-.025em;margin:16px 0 0;color:#fff;max-width:22ch">Bring a VM. Paste one command.</h2>
   <div style="margin-top:30px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:24px 28px;max-width:760px">
     <div style="display:flex;flex-direction:column;gap:7px;padding-top:16px;border-top:1px solid rgba(230,230,230,.1)">
-      <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#E6E6E6;font-weight:500"><span style="color:#00AFAF">01</span> &#160;A free Oracle VM</span>
+      <span class="lc" style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#E6E6E6;font-weight:500"><span style="color:#00AFAF">01</span> &#160;A free Oracle VM</span>
       <span style="font-size:13.5px;color:#8A8A8A;line-height:1.55">Always-Free ARM instance. Open ports 80 + 443 in its console &#8212; once.</span>
     </div>
     <div style="display:flex;flex-direction:column;gap:7px;padding-top:16px;border-top:1px solid rgba(230,230,230,.1)">
-      <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#E6E6E6;font-weight:500"><span style="color:#00AFAF">02</span> &#160;Node &#8805; 22</span>
+      <span class="lc" style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#E6E6E6;font-weight:500"><span style="color:#00AFAF">02</span> &#160;Node &#8805; 22</span>
       <span style="font-size:13.5px;color:#8A8A8A;line-height:1.55">On your own machine, to run the terminal app. That&#8217;s the whole prerequisite list.</span>
     </div>
   </div>
@@ -325,7 +327,7 @@ button{font-family:inherit}
 <div style="height:1px;background:rgba(230,230,230,.08);max-width:1200px;margin:0 auto"></div>
 
 <section id="faq" style="max-width:920px;margin:0 auto;width:100%;padding:clamp(60px,8vw,110px) clamp(20px,5vw,64px)">
-  <div style="display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:#00AFAF"><span style="width:8px;height:8px;background:#FFAF00;display:inline-block"></span>FAQ</div>
+  <div style="display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;text-transform:lowercase;color:#00AFAF"><span style="width:8px;height:8px;background:#FFAF00;display:inline-block"></span>FAQ</div>
   <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:clamp(28px,3.8vw,44px);line-height:1.08;letter-spacing:-.025em;margin:16px 0 28px;color:#fff">Questions, answered.</h2>
   <div style="border-bottom:1px solid rgba(230,230,230,.1)">
 
@@ -388,13 +390,13 @@ button{font-family:inherit}
     </div>
     <div style="display:flex;gap:56px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:13px">
       <div style="display:flex;flex-direction:column;gap:11px">
-        <span style="color:#6C6E76;letter-spacing:.12em;text-transform:uppercase;font-size:11px">project</span>
+        <span style="color:#6C6E76;letter-spacing:.12em;text-transform:lowercase;font-size:11px">project</span>
         <a href="https://github.com/getcollateral/collateral" target="_blank" rel="noopener" class="fl" style="color:#B4B4B8;display:inline-flex;align-items:center;gap:5px">GitHub <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"/><path d="M9 7h8v8"/></svg></a>
         <a href="#start" class="fl" style="color:#B4B4B8">Get started</a>
         <a href="#faq" class="fl" style="color:#B4B4B8">FAQ</a>
       </div>
       <div style="display:flex;flex-direction:column;gap:11px">
-        <span style="color:#6C6E76;letter-spacing:.12em;text-transform:uppercase;font-size:11px">learn</span>
+        <span style="color:#6C6E76;letter-spacing:.12em;text-transform:lowercase;font-size:11px">learn</span>
         <a href="#how" class="fl" style="color:#B4B4B8">How it works</a>
         <a href="#stealth" class="fl" style="color:#B4B4B8">Stealth transport</a>
         <a href="#features" class="fl" style="color:#B4B4B8">Features</a>
