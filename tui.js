@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Collateral — terminal control panel. Full-screen, centered, single-keypress, no
 // browser, no dependencies. Runs in any terminal on any OS.
 //

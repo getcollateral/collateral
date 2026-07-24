@@ -1,13 +1,17 @@
 {
-  "name": "collateral-prototype",
+  "name": "getcollateral",
   "version": "0.1.0",
-  "private": true,
+  "description": "A private tunnel you own end-to-end: provisions a stealth proxy (VLESS over WebSocket-in-TLS, looks like plain HTTPS) on your own free cloud VM, controlled from your terminal.",
   "type": "module",
-  "description": "Runnable prototype of a BYOI serverless censorship-circumvention tunnel (VLESS over WebSocket-in-TLS).",
+  "bin": {
+    "getcollateral": "tui.js",
+    "collateral": "tui.js"
+  },
   "engines": {
     "node": ">=22"
   },
   "scripts": {
+    "start": "node tui.js",
     "tui": "node tui.js",
     "ui": "node ui-server.js",
     "demo": "node run-demo.js",
@@ -16,5 +20,19 @@
     "client": "node client.js",
     "provision": "node provision/provision.js"
   },
+  "keywords": [
+    "tunnel",
+    "self-hosted",
+    "byoi",
+    "vless",
+    "proxy",
+    "tui",
+    "privacy"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://tk-ls.xyz/collateral/prototype.git"
+  },
+  "homepage": "https://getcollateral.xyz",
   "license": "MIT"
 }

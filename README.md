@@ -12,7 +12,13 @@ legal risk. The same protocol code also compiles into a **real deployable Cloudf
 Worker** (`worker/_worker.js`).
 
 ```
-npm run tui      # ⭐ terminal control panel (no browser, any OS)
+npx getcollateral   # ⭐ run it — the terminal control panel (needs Node ≥ 22)
+```
+
+or from a clone (for development):
+
+```
+npm start        # ⭐ terminal control panel (= npm run tui), no browser, any OS
 npm run ui       # same thing as a local web GUI, if you prefer a browser
 npm run demo     # end-to-end tunnel + self-checks (proves the mechanism)
 npm test         # unit tests for the protocol + framing
