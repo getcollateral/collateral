@@ -13,7 +13,7 @@ import {
 } from "./common/vless.js";
 import { parseSocksUdp } from "./client.js";
 import { qrMatrix } from "./common/qr.js";
-import { vlessUriFromConfig } from "./common/config.js";
+import { vlessUriFromConfig, parseVlessUri } from "./common/config.js";
 import { FrameParser, encodeFrame, OPCODES } from "./common/ws-frame.js";
 import { isIPv4Literal, isCloudflareV4, nat64Address, normalizeNat64Prefix } from "./common/nat64.js";
 import { renderFrame, hitTest } from "./tui.js";
@@ -229,6 +229,19 @@ test("config: vlessUriFromConfig builds an importable vless:// link", () => {
   assert.match(uri, /security=tls/);
   assert.match(uri, /sni=1\.2\.3\.4\.sslip\.io/);
   assert.match(uri, /path=%2Fabc123/);
+});
+
+test("config: vless URI round-trips (share -> scan -> import)", () => {
+  const workerUrl = "wss://161.33.237.170.sslip.io/fa7f13e7d4de";
+  const uuid = "745282aa-88d3-476d-87aa-9cecee72177c";
+  const back = parseVlessUri(vlessUriFromConfig({ workerUrl, uuid }));
+  assert.equal(back.uuid, uuid);
+  assert.equal(back.workerUrl, workerUrl);
+  assert.equal(back.name, "Collateral");
+});
+
+test("config: parseVlessUri rejects a non-vless link", () => {
+  assert.throws(() => parseVlessUri("https://example.com/x"));
 });
 
 test("TUI: help view renders proxy instructions", () => {

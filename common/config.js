@@ -31,6 +31,22 @@ export function vlessUriFromConfig({ workerUrl, uuid, name = "Collateral" }) {
   return `vless://${uuid}@${u.hostname}:${port}?${q.toString()}#${encodeURIComponent(name)}`;
 }
 
+// Inverse of vlessUriFromConfig: parse a scanned/pasted vless:// URI back into the app's
+// { workerUrl, uuid } so another instance can import it. Throws on a non-vless link.
+export function parseVlessUri(uri) {
+  const u = new URL(String(uri).trim());
+  if (u.protocol !== "vless:") throw new Error("not a vless:// link");
+  const uuid = decodeURIComponent(u.username);
+  const tls = (u.searchParams.get("security") || "tls") !== "none";
+  const scheme = tls ? "wss" : "ws";
+  const port = u.port || (tls ? "443" : "80");
+  const isDefaultPort = (tls && port === "443") || (!tls && port === "80");
+  const path = u.searchParams.get("path") || "/";
+  const workerUrl = `${scheme}://${u.hostname}${isDefaultPort ? "" : ":" + port}${path}`;
+  const name = u.hash ? decodeURIComponent(u.hash.slice(1)) : "";
+  return { workerUrl, uuid, name };
+}
+
 // A subscription is just base64 of newline-joined URIs — what the app refreshes
 // to rotate a burned endpoint without shipping an app update.
 export function buildSubscription(uris) {

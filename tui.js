@@ -21,7 +21,8 @@ import { provisionVps } from "./provision/vps.js";
 import { setSocks, socksEnabled, primaryService, supported as sysproxySupported } from "./common/sysproxy.js";
 import * as tun from "./common/tun.js";
 import { qrToTerminal } from "./common/qr.js";
-import { vlessUriFromConfig } from "./common/config.js";
+import { vlessUriFromConfig, parseVlessUri } from "./common/config.js";
+import { scanQrViaCamera, supported as scanSupported } from "./common/qrscan.js";
 
 const VPS_STEPS = [
   ["connect", "Connect to your VM over SSH"],
@@ -221,7 +222,8 @@ function buildBox(s) {
     [["u", "set access key"], ["g", "generate new key"]],
     [["k", "cloudflare token link"], ["p", "proxy setup help"]],
     [["d", `system proxy: ${dw}`], ["f", `full tunnel: ${tw}`]],
-    [["x", "share config (QR)"], ["q", "quit"]],
+    [["x", "share config (QR)"], ["i", "import (scan QR)"]],
+    [["q", "quit"]],
   ];
   for (const [l, r] of menu) {
     const i = body.length;
@@ -304,6 +306,25 @@ function shareConfig() {
   catch (e) { return setMsg(A.red + `Couldn't build the share link: ${e.message || e}` + A.reset); }
   state.view = "share";
   draw();
+}
+
+// Import a config from another instance by scanning its share QR (`x`) with the Mac camera.
+async function importFromCamera() {
+  if (!scanSupported()) return setMsg(A.red + "Camera import is macOS-only in this version." + A.reset);
+  state.busy = true; state.busyText = "opening camera — point at the other Mac's QR (Esc cancels)…"; draw();
+  let uri;
+  try { uri = await scanQrViaCamera(); }
+  catch (e) { state.busy = false; return setMsg(A.red + `Camera: ${e.message || e}` + A.reset); }
+  state.busy = false;
+  if (!uri) return setMsg("Scan cancelled.");
+  let cfg;
+  try { cfg = parseVlessUri(uri); }
+  catch { return setMsg(A.red + "That QR isn't a Collateral / VLESS config." + A.reset); }
+  if (!isWsUrl(cfg.workerUrl) || !isUuid(cfg.uuid)) return setMsg(A.red + "Scanned config is incomplete (need a wss:// endpoint + a UUID key)." + A.reset);
+  state.workerUrl = cfg.workerUrl; state.uuid = cfg.uuid;
+  saveConfig({ workerUrl: cfg.workerUrl, uuid: cfg.uuid });
+  let host = cfg.workerUrl; try { host = new URL(cfg.workerUrl).host; } catch {}
+  setMsg(A.green + `Imported ${host} — press c to connect.` + A.reset);
 }
 function setMsg(m) { state.msg = m; draw(); }
 
@@ -618,6 +639,7 @@ async function handleKey(k) {
     case "d": return toggleSystemProxy();
     case "f": return toggleTun();
     case "x": return shareConfig();
+    case "i": return importFromCamera();
     case "c": return state.connected ? disconnect() : connect();
     case "t": return test();
     case "g": return regenKey();
