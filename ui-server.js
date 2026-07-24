@@ -261,7 +261,7 @@ function page() {
       <li><b>Firefox:</b> Settings → Network Settings → Manual proxy → SOCKS v5 host <code id="ph1">127.0.0.1</code>, port <code id="pp1">1080</code>, and tick “Proxy DNS when using SOCKS v5”.</li>
       <li><b>macOS (all apps):</b> System Settings → Network → your Wi‑Fi → Details → Proxies → SOCKS, host <code>127.0.0.1</code> port <code id="pp2">1080</code>.</li>
     </ol>
-    <div class="hintbox" style="margin-top:12px">Your VM reaches every site directly - no per‑site setup.</div>
+    <div class="hintbox" style="margin-top:12px">Your VM reaches every site directly, no per‑site setup.</div>
   </div>
 
   <div class="foot">Running locally on your machine · your traffic exits via <b>your own VM</b></div>
@@ -296,7 +296,7 @@ function render(s){
   if (s.uuid && !document.activeElement.matches("#uuid")) $("uuid").value = s.uuid;
 }
 
-$("gen").onclick = async () => { const {uuid} = await api("/api/generate-uuid","POST"); $("uuid").value = uuid; toast("New access key generated - re-run setup to upload it to your server."); };
+$("gen").onclick = async () => { const {uuid} = await api("/api/generate-uuid","POST"); $("uuid").value = uuid; toast("New access key generated. Re-run setup to upload it to your server."); };
 $("connect").onclick = async () => {
   const btn=$("connect"); const wasOn = btn.classList.contains("on");
   btn.disabled = true; $("pill").className="pill busy"; $("pillText").textContent = wasOn?"Disconnecting…":"Connecting…";

@@ -213,9 +213,9 @@ export async function provisionVps({ host, user = "ubuntu", keyPath, uuid: keyAr
   try {
     await waitForHttps(domain, log);
   } catch (e) {
-    log("\n[tls] failed - pulling VM diagnostics (this is the real reason):\n");
+    log("\n[tls] failed, pulling VM diagnostics (this is the real reason):\n");
     log("\n" + (await diagnose(host, user, keyPath, domain)) + "\n");
-    throw new Error(e.message + " - see the Caddy log in the diagnostics (rate limit? port 80 unreachable? service down?)");
+    throw new Error(e.message + ". See the Caddy log in the diagnostics (rate limit? port 80 unreachable? service down?)");
   }
   onStep("tls", "ok", domain);
 
@@ -232,7 +232,7 @@ if (process.argv[1] && /vps\.js$/.test(process.argv[1]) && process.argv[2]) {
   console.log(`Provisioning ${user}@${host}  (key: ${keyPath})${domain ? `  domain: ${domain}` : ""}`);
   provisionVps({
     host, user, keyPath, domain,
-    onStep: (n, s, note) => process.stdout.write(`\n[${s.toUpperCase()}] ${n}${note ? " - " + note : ""}\n`),
+    onStep: (n, s, note) => process.stdout.write(`\n[${s.toUpperCase()}] ${n}${note ? ": " + note : ""}\n`),
     log: (m) => process.stdout.write(m),
   })
     .then((res) => {

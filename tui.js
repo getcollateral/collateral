@@ -152,7 +152,7 @@ function buildBox(s) {
       `${A.muted}device-wide${A.reset} (d)  flips the macOS system proxy;`,
       `             Apple treats it as best-effort.`,
       `${A.muted}curl${A.reset}         curl --socks5-hostname 127.0.0.1:${port} …`, ``,
-      `${A.dim}Your VM reaches every site directly - nothing to${A.reset}`,
+      `${A.dim}Your VM reaches every site directly, nothing to${A.reset}`,
       `${A.dim}configure per site.${A.reset}`, SEP,
       `${A.dim}press any key or click to go back${A.reset}`,
     );
@@ -202,8 +202,8 @@ function buildBox(s) {
   const vw = innerW - 13;
   body.push(SEP,
     row("proxy", s.connected ? `${A.teal}socks5${A.reset}  127.0.0.1:${s.socksPort}` : none),
-    row("endpoint", s.workerUrl ? ellip(s.workerUrl, vw) : A.dim + "(not set - press w)" + A.reset),
-    row("key", s.uuid ? ellip(s.uuid, vw) : A.dim + "(not set - press u or g)" + A.reset),
+    row("endpoint", s.workerUrl ? ellip(s.workerUrl, vw) : A.dim + "(not set, press w)" + A.reset),
+    row("key", s.uuid ? ellip(s.uuid, vw) : A.dim + "(not set, press u or g)" + A.reset),
     row("exit ip", s.exitIP ? A.teal + s.exitIP + A.reset : none),
     row("transport", `${A.dim}VLESS · WebSocket · TLS · :443${A.reset}`),
     SEP,
@@ -289,8 +289,8 @@ function qrTerminalNote(qrWidth, cols) {
   if (typeof process.stdout.hasColors === "function" && !process.stdout.hasColors()) blockers.push("no color support");
   const loc = (process.env.LC_ALL || process.env.LC_CTYPE || process.env.LANG || "").toLowerCase();
   if (process.platform !== "darwin" && loc && !/utf-?8/.test(loc)) blockers.push("non-UTF-8 locale");
-  if (qrWidth > cols) blockers.push(`too narrow - needs ${qrWidth} cols, you have ${cols}`);
-  if (blockers.length) return { tone: "warn", text: `⚠ this terminal may not render a scannable QR (${blockers.join("; ")}) - copy the link below.` };
+  if (qrWidth > cols) blockers.push(`too narrow: needs ${qrWidth} cols, you have ${cols}`);
+  if (blockers.length) return { tone: "warn", text: `⚠ this terminal may not render a scannable QR (${blockers.join("; ")}). Copy the link below.` };
   if (process.env.TERM_PROGRAM === "Apple_Terminal") return { tone: "note", text: "Terminal.app draws block characters from the font, so this QR may look seamy (it still scans). Ghostty · Kitty · WezTerm render it crisply." };
   return null;
 }
@@ -317,7 +317,7 @@ function buildShare(s) {
 
 function shareConfig() {
   if (!isWsUrl(state.workerUrl) || !isUuid(state.uuid)) {
-    return setMsg(A.red + "Nothing to share yet - set a server + key, or run setup (s)." + A.reset);
+    return setMsg(A.red + "Nothing to share yet: set a server + key, or run setup (s)." + A.reset);
   }
   try { state.shareUri = vlessUriFromConfig({ workerUrl: state.workerUrl, uuid: state.uuid }); }
   catch (e) { return setMsg(A.red + `Couldn't build the share link: ${e.message || e}` + A.reset); }
@@ -328,7 +328,7 @@ function shareConfig() {
 // Import a config from another instance by scanning its share QR (`x`) with the Mac camera.
 async function importFromCamera() {
   if (!scanSupported()) return setMsg(A.red + "Camera import is macOS-only in this version." + A.reset);
-  state.busy = true; state.busyText = "opening camera - point at the other Mac's QR (Esc cancels)…"; draw();
+  state.busy = true; state.busyText = "opening camera, point at the other Mac's QR (Esc cancels)…"; draw();
   let uri;
   try { uri = await scanQrViaCamera(); }
   catch (e) { state.busy = false; return setMsg(A.red + `Camera: ${e.message || e}` + A.reset); }
@@ -341,7 +341,7 @@ async function importFromCamera() {
   state.workerUrl = cfg.workerUrl; state.uuid = cfg.uuid;
   saveConfig({ workerUrl: cfg.workerUrl, uuid: cfg.uuid });
   let host = cfg.workerUrl; try { host = new URL(cfg.workerUrl).host; } catch {}
-  setMsg(A.green + `Imported ${host} - press c to connect.` + A.reset);
+  setMsg(A.green + `Imported ${host}. Press c to connect.` + A.reset);
 }
 function setMsg(m) { state.msg = m; draw(); }
 
@@ -354,8 +354,8 @@ function startSocks(workerUrl, uuid, port) {
 }
 
 async function connect() {
-  if (!isWsUrl(state.workerUrl)) return setMsg(A.red + "Set a server address first (wss://…) - press w." + A.reset);
-  if (!isUuid(state.uuid)) return setMsg(A.red + "Set a valid access key first - press u or g." + A.reset);
+  if (!isWsUrl(state.workerUrl)) return setMsg(A.red + "Set a server address first (wss://…). Press w." + A.reset);
+  if (!isUuid(state.uuid)) return setMsg(A.red + "Set a valid access key first. Press u or g." + A.reset);
   state.busy = true; state.busyText = "connecting…"; draw();
   try {
     try { socks = await startSocks(state.workerUrl, state.uuid, 1080); }
@@ -366,7 +366,7 @@ async function connect() {
     const ip = await getExitIP(state.socksPort);
     state.exitIP = ip; state.connected = true; state.reconnecting = false; state.busy = false;
     startHealthMonitor();
-    setMsg(A.green + `Connected - traffic exits via ${ip}.` + A.reset);
+    setMsg(A.green + `Connected, traffic exits via ${ip}.` + A.reset);
   } catch (e) {
     if (socks) { try { socks.close(); } catch {} }
     socks = null; state.socksPort = null; state.connected = false; state.exitIP = null;
@@ -412,11 +412,11 @@ async function healthTick() {
       new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 9000)),
     ]);
     state.exitIP = ip; healthFails = 0;
-    if (state.reconnecting) { state.reconnecting = false; setMsg(A.green + `Tunnel recovered - exits via ${ip}.` + A.reset); }
+    if (state.reconnecting) { state.reconnecting = false; setMsg(A.green + `Tunnel recovered, exits via ${ip}.` + A.reset); }
     scheduleHealth(HEALTH_OK_MS);
   } catch {
     healthFails++;
-    if (healthFails >= 2 && !state.reconnecting) { state.reconnecting = true; setMsg(A.amber + "Tunnel unreachable - reconnecting automatically…" + A.reset); }
+    if (healthFails >= 2 && !state.reconnecting) { state.reconnecting = true; setMsg(A.amber + "Tunnel unreachable, reconnecting automatically…" + A.reset); }
     scheduleHealth(healthFails >= 2 ? Math.min(8000, HEALTH_OK_MS) : Math.min(4000, HEALTH_OK_MS));
   }
 }
@@ -429,9 +429,9 @@ async function toggleTun() {
     state.busy = true; state.busyText = "turning off full tunnel…"; draw();
     const ok = await tun.stopTun();
     state.tunActive = false; state.busy = false;
-    return setMsg(ok ? "Full tunnel off - networking restored." : A.red + "Couldn't confirm teardown - check `node common/tun.js status`." + A.reset);
+    return setMsg(ok ? "Full tunnel off, networking restored." : A.red + "Couldn't confirm teardown. Check `node common/tun.js status`." + A.reset);
   }
-  if (!state.connected) return setMsg(A.red + "Connect first - the full tunnel routes every app through the tunnel." + A.reset);
+  if (!state.connected) return setMsg(A.red + "Connect first. The full tunnel routes every app through the tunnel." + A.reset);
   if (state.systemProxy) { try { await setSocks(state.netService, false); } catch {} state.systemProxy = false; } // exclusive
   const go = await confirmWord([
     `${A.amber}${A.bold}Full tunnel (device-wide TUN)${A.reset}`,
@@ -441,7 +441,7 @@ async function toggleTun() {
     ``,
     `• Needs ${A.bold}admin${A.reset} once (a macOS password dialog).`,
     `• First time, downloads a small verified helper (~4 MB).`,
-    `• ${A.dim}UDP/QUIC isn't relayed yet (server is TCP-only) - browsers fall back to TCP.${A.reset}`,
+    `• ${A.dim}UDP/QUIC isn't relayed yet (server is TCP-only). Browsers fall back to TCP.${A.reset}`,
     `• Turns off automatically on disconnect, quit, or if this app crashes.`,
     ``,
     `Type ${A.amber}yes${A.reset} to continue, or enter to cancel.`,
@@ -452,7 +452,7 @@ async function toggleTun() {
     const host = new URL(state.workerUrl).host;
     await tun.startTun({ socksPort: state.socksPort, serverHost: host, onLog: (m) => { state.busyText = m; draw(); } });
     state.tunActive = true; state.busy = false;
-    setMsg(A.green + "Full tunnel ON - every app's TCP now routes through the server." + A.reset + `  ${A.dim}(press f to turn off)${A.reset}`);
+    setMsg(A.green + "Full tunnel ON, every app's TCP now routes through the server." + A.reset + `  ${A.dim}(press f to turn off)${A.reset}`);
   } catch (e) {
     state.tunActive = false; state.busy = false;
     setMsg(A.red + `Full tunnel failed: ${e.message || e}` + A.reset);
@@ -460,11 +460,11 @@ async function toggleTun() {
 }
 
 async function toggleSystemProxy() {
-  if (!sysproxySupported()) return setMsg(A.red + "Device-wide is macOS-only here - set your OS proxy manually (press p)." + A.reset);
+  if (!sysproxySupported()) return setMsg(A.red + "Device-wide is macOS-only here. Set your OS proxy manually (press p)." + A.reset);
   if (!state.netService) state.netService = await primaryService();
   if (!state.netService) return setMsg(A.red + "Couldn't find your network service." + A.reset);
   const turnOn = !state.systemProxy;
-  if (turnOn && !state.connected) return setMsg(A.red + "Connect first - device-wide routes every app through the tunnel." + A.reset);
+  if (turnOn && !state.connected) return setMsg(A.red + "Connect first. Device-wide routes every app through the tunnel." + A.reset);
   if (turnOn && state.tunActive) { try { await tun.stopTun(); } catch {} state.tunActive = false; } // exclusive with full tunnel
   state.busy = true; state.busyText = turnOn ? "enabling system proxy (may ask for your password)…" : "disabling system proxy…"; draw();
   const ok = await setSocks(state.netService, turnOn, "127.0.0.1", state.socksPort || 1080);
@@ -472,12 +472,12 @@ async function toggleSystemProxy() {
   if (!ok) return setMsg(A.red + "Couldn't change the system proxy (cancelled or failed)." + A.reset);
   state.systemProxy = turnOn;
   setMsg(turnOn
-    ? A.green + "Device-wide ON - every app now routes through the tunnel." + A.reset + `  ${A.dim}(press d to turn off before quitting)${A.reset}`
-    : "Device-wide off - apps use your normal connection again.");
+    ? A.green + "Device-wide ON, every app now routes through the tunnel." + A.reset + `  ${A.dim}(press d to turn off before quitting)${A.reset}`
+    : "Device-wide off, apps use your normal connection again.");
 }
 
 async function test() {
-  if (!state.connected) return setMsg(A.red + "Connect first - press c." + A.reset);
+  if (!state.connected) return setMsg(A.red + "Connect first. Press c." + A.reset);
   state.busy = true; state.busyText = "testing…"; draw();
   try {
     const ip = await getExitIP(state.socksPort);
@@ -555,18 +555,18 @@ async function setupVps() {
     `${A.bold}Ubuntu${A.reset} instance is ideal (free forever). Before continuing, open`,
     `${A.bold}ports 80 and 443${A.reset} in its cloud console security list (one-time).`,
     ``,
-    `This app will SSH in and install everything - server, HTTPS, firewall,`,
+    `This app will SSH in and install everything: server, HTTPS, firewall,`,
     `and a background service. Nothing to type on the VM.`,
     ``,
     `${A.dim}Optional: use your own domain (A record → the VM) for a stronger,`,
-    `unblockable endpoint - or press enter for automatic ${A.reset}${A.dim}<ip>.sslip.io.${A.reset}`,
+    `unblockable endpoint, or press enter for automatic ${A.reset}${A.dim}<ip>.sslip.io.${A.reset}`,
     ``,
     `Type ${A.amber}yes${A.reset} to continue, or enter to cancel.`,
   ], "yes");
   if (!ok) { draw(); return setMsg("Setup cancelled."); }
 
   const host = await promptLine("VM public IP address", state.vpsHost || "");
-  if (!host) { draw(); return setMsg("Cancelled - no IP entered."); }
+  if (!host) { draw(); return setMsg("Cancelled, no IP entered."); }
   const user = await promptLine("SSH username (ubuntu for Ubuntu, opc for Oracle Linux)", state.vpsUser || "ubuntu");
   const keyRaw = await promptLine("Path to your SSH private key", state.vpsKey || `${os.homedir()}/.ssh/id_rsa`);
   const keyPath = keyRaw.replace(/^~(?=$|\/)/, os.homedir());
@@ -625,7 +625,7 @@ async function handleKey(k) {
       return setMsg(state.workerUrl ? "Saved server address." : "Cleared server address.");
     }
     case "u": {
-      const v = await promptLine("Access key (UUID) - paste it", state.uuid);
+      const v = await promptLine("Access key (UUID): paste it", state.uuid);
       state.uuid = v || ""; saveConfig({ uuid: state.uuid });
       return setMsg(state.uuid ? "Saved access key." : "Cleared access key.");
     }
@@ -713,7 +713,7 @@ async function quit() {
 
 function main() {
   if (!process.stdin.isTTY) {
-    process.stdout.write(renderFrame(state) + "\n\n  (interactive controls need a real terminal - run: node tui.js)\n");
+    process.stdout.write(renderFrame(state) + "\n\n  (interactive controls need a real terminal, run: node tui.js)\n");
     process.exit(0);
   }
   w(SCREEN_ON + HIDE + NOWRAP);
@@ -734,12 +734,12 @@ function main() {
     state.netService = await primaryService();
     state.systemProxy = await socksEnabled(state.netService);
     if (state.systemProxy && !state.connected) {
-      state.msg = A.red + "Device-wide proxy is ON but not connected - press c to connect, or d to turn it off." + A.reset;
+      state.msg = A.red + "Device-wide proxy is ON but not connected. Press c to connect, or d to turn it off." + A.reset;
     }
     // A leftover TUN session from a crashed run would strand traffic - surface it so f turns it off.
     if (tun.supported() && await tun.isActive().catch(() => false)) {
       state.tunActive = true;
-      state.msg = A.red + "A full tunnel from a previous run is still active - press f to turn it off." + A.reset;
+      state.msg = A.red + "A full tunnel from a previous run is still active. Press f to turn it off." + A.reset;
     }
     draw();
   })();

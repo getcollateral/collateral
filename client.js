@@ -128,9 +128,9 @@ export function startClient({ socksPort = 1080, host = "127.0.0.1", workerUrl, u
       const code = ev && ev.code;
       if (!quiet && code && code !== 1000) {
         let hint = "";
-        if (code === 1008) hint = " - UUID rejected: the client USER_UUID must equal the server's USER_UUID";
-        else if (code === 1003) hint = " - server refused a non-TCP command";
-        else if (code === 1006 || !wsOpen) hint = ` - couldn't reach/keep the tunnel to ${workerUrl} (is the server set up? correct URL?)`;
+        if (code === 1008) hint = ", UUID rejected: the client USER_UUID must equal the server's USER_UUID";
+        else if (code === 1003) hint = ", server refused a non-TCP command";
+        else if (code === 1006 || !wsOpen) hint = `, couldn't reach/keep the tunnel to ${workerUrl} (is the server set up? correct URL?)`;
         console.error(`[client] tunnel closed (code ${code}${ev.reason ? " " + ev.reason : ""})${hint}`);
       }
       try { sock.end(); } catch {}

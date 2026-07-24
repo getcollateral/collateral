@@ -131,7 +131,7 @@ export async function ensureBinary(onLog = () => {}) {
   if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
   const got = crypto.createHash("sha256").update(buf).digest("hex");
-  if (got !== want) throw new Error(`checksum mismatch (expected ${want.slice(0, 12)}…, got ${got.slice(0, 12)}…) - refusing to run it`);
+  if (got !== want) throw new Error(`checksum mismatch (expected ${want.slice(0, 12)}…, got ${got.slice(0, 12)}…). Refusing to run it`);
   const zip = path.join(BIN_DIR, `${assetName()}.zip`);
   fs.writeFileSync(zip, buf);
   onLog("verifying + unpacking…");
@@ -227,12 +227,12 @@ export async function startTun({ socksPort, serverHost, onLog = () => {} }) {
 
   // Wait for the session to signal readiness.
   for (let i = 0; i < 150; i++) {
-    if (fs.existsSync(READY_FILE)) { onLog(`full tunnel up on ${dev} - all TCP now routes through the server.`); return { dev, serverIp }; }
+    if (fs.existsSync(READY_FILE)) { onLog(`full tunnel up on ${dev}, all TCP now routes through the server.`); return { dev, serverIp }; }
     await new Promise((r) => setTimeout(r, 100));
   }
   let tail = "";
   try { tail = fs.readFileSync(LOG_FILE, "utf8").trim().split("\n").slice(-3).join(" "); } catch {}
-  throw new Error("TUN didn't come up" + (tail ? ` - ${tail}` : "") + ` (log: ${LOG_FILE})`);
+  throw new Error("TUN didn't come up" + (tail ? `: ${tail}` : "") + ` (log: ${LOG_FILE})`);
 }
 
 // Ask the root session to stop - just touch the stop file (no admin needed). Resolves once the

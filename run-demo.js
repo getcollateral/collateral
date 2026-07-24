@@ -55,7 +55,7 @@ async function main() {
   const uuid = crypto.randomUUID();
   const nonce = crypto.randomBytes(8).toString("hex");
 
-  console.log(`\n${C.b}Collateral prototype - end-to-end tunnel demo${C.rst}`);
+  console.log(`\n${C.b}Collateral prototype: end-to-end tunnel demo${C.rst}`);
   console.log(`${C.dim}ephemeral uuid ${uuid}${C.rst}\n`);
 
   // 1. Local origin server (stands in for "the open internet").
@@ -141,7 +141,7 @@ async function main() {
     });
     record(`live exit: HTTPS to example.com over the tunnel  ${C.dim}(${status.trim()})${C.rst}`, /200|30\d/.test(status), "optional");
   } catch (e) {
-    console.log(`  ${C.dim}SKIP  live exit: no/blocked egress (${e.message}) - the localhost checks above still prove the mechanism${C.rst}`);
+    console.log(`  ${C.dim}SKIP  live exit: no/blocked egress (${e.message}). The localhost checks above still prove the mechanism${C.rst}`);
   }
 
   // --- Show the generated client config (what onboarding hands the user) ---

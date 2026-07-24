@@ -20,10 +20,10 @@ export function scanQrViaCamera() {
       const out = (stdout || "").trim();
       if (out) return resolve(out);                      // a QR was decoded
       const e = (stderr || "").toString();
-      if (/CAMERA_DENIED/.test(e)) return reject(new Error("camera access denied - enable it for your terminal in System Settings → Privacy & Security → Camera"));
+      if (/CAMERA_DENIED/.test(e)) return reject(new Error("camera access denied, enable it for your terminal in System Settings → Privacy & Security → Camera"));
       if (/NO_CAMERA/.test(e)) return reject(new Error("no camera available"));
       if (err && err.killed) return reject(new Error("timed out waiting for a QR"));
-      if (err && /swift: command not found|ENOENT/.test(e + (err.message || ""))) return reject(new Error("`swift` not found - install the Xcode Command Line Tools (xcode-select --install)"));
+      if (err && /swift: command not found|ENOENT/.test(e + (err.message || ""))) return reject(new Error("`swift` not found. Install the Xcode Command Line Tools (xcode-select --install)"));
       return resolve(null);                              // exit 0, no output = cancelled (Esc/close)
     });
   });
