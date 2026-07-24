@@ -140,7 +140,9 @@ function buildBox(s) {
   const top = A.dim + "╭" + "─".repeat(innerW + 2) + "╮" + A.reset;
   const sep = A.dim + "├" + "─".repeat(innerW + 2) + "┤" + A.reset;
   const bot = A.dim + "╰" + "─".repeat(innerW + 2) + "╯" + A.reset;
-  const line = (c) => `${bar} ${padEndVis(truncVis(c, innerW), innerW)} ${bar}`;
+  // Reset before the right border so a content color (e.g. the status word, which fills the line
+  // exactly to the edge) can't bleed into the space + frame `│`.
+  const line = (c) => `${bar} ${padEndVis(truncVis(c, innerW), innerW)}${A.reset} ${bar}`;
   const body = [], zones = [];
   const finish = () => ({
     lines: [top, ...body.map((b) => (b === SEP ? sep : line(b))), bot],
