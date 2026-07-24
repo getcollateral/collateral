@@ -1,0 +1,10 @@
+node_modules/
+.wrangler/
+dist/
+*.log
+.DS_Store
+.dev.vars
+.collateral-config.json
+
+# downloaded helper binaries are cached in ~/.collateral/, never in the repo
+bin/
