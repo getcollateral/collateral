@@ -753,4 +753,14 @@ function isEntrypoint() {
   try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); }
   catch { return false; }
 }
-if (isEntrypoint()) main();
+if (isEntrypoint()) {
+  // WebSocket (and other globals we rely on) are only built in on Node >= 22. Debian/Ubuntu ship
+  // Node 18, so fail fast with an actionable message instead of a cryptic ReferenceError at connect.
+  const nodeMajor = Number(process.versions.node.split(".")[0]);
+  if (nodeMajor < 22) {
+    console.error(`\nCollateral needs Node 22 or newer - you're on ${process.version}.\n` +
+      `Install a newer Node and re-run:  nvm install 22   (or https://nodejs.org)\n`);
+    process.exit(1);
+  }
+  main();
+}
