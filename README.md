@@ -16,8 +16,8 @@ That's it - the command downloads and opens the control panel. Needs [Node](http
 ≥ 22.
 
 - **Website:** https://getcollateral.xyz
-- **Works on:** macOS, Linux, Windows (the terminal app). Device-wide "full tunnel" mode is
-  macOS-only for now.
+- **Works on:** macOS, Linux, Windows (the terminal app). Device-wide "full tunnel" mode works
+  on macOS and Linux (Windows is planned).
 
 ---
 
@@ -85,7 +85,7 @@ working.
 | **c** | Connect / disconnect |
 | **t** | Test the connection (shows the live exit IP) |
 | **d** | System-wide proxy on/off (macOS) |
-| **f** | Full tunnel on/off - captures the whole device (macOS) |
+| **f** | Full tunnel on/off - captures the whole device (macOS & Linux) |
 | **x** | Share this config as a QR code |
 | **i** | Import a config by scanning a QR (macOS camera) |
 | **w** / **u** | Set the server address / access key manually |
@@ -102,13 +102,13 @@ recovers - no manual reconnect needed.
 
 ---
 
-## Route your whole device (macOS)
+## Route your whole device (macOS & Linux)
 
 There are two device-wide modes. Both only run while you're connected, and both turn **off
 automatically on disconnect, on quit, and even on a crash** - a dead tunnel can never strand
 your traffic.
 
-### `d` - system proxy
+### `d` - system proxy (macOS)
 
 Flips the macOS system SOCKS proxy to point at the tunnel, so every app that honors it is
 routed. Needs your password (changing network settings requires admin). Apple treats this as
@@ -121,8 +121,9 @@ level - nothing to configure per app, nothing that can bypass it. **Both TCP and
 through your VM, so video calls, games (Roblox, etc.), and QUIC/HTTP-3 sites all work, not just
 web pages.
 
-It asks for your password once to set up, then runs safely in the background: it never touches
-your normal network routes, and if anything goes wrong it heals itself automatically.
+Works on **macOS and Linux** (Windows is planned). It asks for your password once to set up (a
+system dialog on macOS, a polkit prompt on Linux), then runs safely in the background: it never
+touches your normal network routes, and if anything goes wrong it heals itself automatically.
 
 ---
 
@@ -151,8 +152,8 @@ points at your VM before continuing. Press enter to skip and use the automatic d
 
 ## Honest limits
 
-- **Full tunnel is macOS-only for now.** The terminal app and SOCKS proxy work everywhere;
-  device-wide capture on Linux/Windows and mobile apps are planned.
+- **Full tunnel covers macOS and Linux (Windows is planned).** The terminal app and SOCKS proxy
+  work everywhere; Windows device-wide capture and mobile apps are on the roadmap.
 - **This isn't magic invisibility.** It looks like normal HTTPS, which defeats the common
   filters that block by domain or category. A sophisticated national firewall doing deep traffic
   analysis is a harder problem - using your own domain helps, but no tool is a guarantee.
