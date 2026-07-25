@@ -57,23 +57,23 @@ working.
 
 ```
   ╭──────────────────────────────────────────────────╮
-  │ [•] collateral                         connected  │
-  │ your own private proxy                            │
+  │ [•] collateral                         connected │
+  │ your own private proxy                           │
   ├──────────────────────────────────────────────────┤
-  │ proxy      socks5  127.0.0.1:1080                 │
-  │ endpoint   wss://161.33.237.170.sslip.io/coll…    │
-  │ key        dc592984-437f-4d0f-9c28-9f0fe354f260   │
-  │ exit ip    161.33.237.170                         │
-  │ transport  VLESS · WebSocket · TLS · :443         │
+  │ proxy      socks5  127.0.0.1:1080                │
+  │ endpoint   wss://161.33.237.170.sslip.io/coll…   │
+  │ key        dc592984-437f-4d0f-9c28-9f0fe354f260  │
+  │ exit ip    161.33.237.170                        │
+  │ transport  VLESS · WebSocket · TLS · :443        │
   ├──────────────────────────────────────────────────┤
-  │ s  first-time setup      c  disconnect            │
-  │ t  test connection       w  set server address    │
-  │ u  set access key        g  generate new key      │
-  │ d  system proxy: off     f  full tunnel: off      │
-  │ x  share config (QR)     i  import (scan QR)      │
-  │ p  proxy setup help      q  quit                  │
+  │ s  first-time setup      c  disconnect           │
+  │ t  test connection       w  set server address   │
+  │ u  set access key        g  generate new key     │
+  │ d  system proxy: off     f  full tunnel: off     │
+  │ x  share config (QR)     i  import (scan QR)     │
+  │ p  proxy setup help      q  quit                 │
   ├──────────────────────────────────────────────────┤
-  │ › Connected - traffic exits via 161.33.237.170.   │
+  │ › Connected - traffic exits via 161.33.237.170.  │
   ╰──────────────────────────────────────────────────╯
 ```
 
