@@ -5,7 +5,7 @@
 //   node tui.js        (or: npm run tui)
 //
 // Controls: c connect/disconnect · t test · w set server · u set key · g generate
-//           p proxy help · q quit
+//           m saved machines · p proxy help · q quit
 
 import readline from "node:readline";
 import crypto from "node:crypto";
@@ -226,7 +226,8 @@ function buildBox(s) {
     [["u", "set access key"], ["g", "generate new key"]],
     [["d", `system proxy: ${dw}`], ["f", `full tunnel: ${tw}`]],
     [["x", "share config (QR)"], ["i", "import (scan QR)"]],
-    [["p", "proxy setup help"], ["q", "quit"]],
+    [["m", "saved machines"], ["p", "proxy setup help"]],
+    [["q", "quit"]],
   ];
   for (const [l, r] of menu) {
     const i = body.length;
@@ -653,6 +654,57 @@ async function setupVps() {
   }
 }
 
+// Saved machines: keep several server+key configs (with a description) and switch between them
+// fast - e.g. a real VM and the demo endpoint. Stored in ~/.collateral-config.json as `machines`.
+async function machines() {
+  const list = Array.isArray(state.machines) ? state.machines : [];
+  const lines = [`${A.amber}${A.bold}Saved machines${A.reset}`, ``];
+  if (!list.length) {
+    lines.push(`${A.dim}(none saved yet)${A.reset}`, ``);
+  } else {
+    list.forEach((m, i) => {
+      lines.push(`  ${A.amber}${i + 1}${A.reset}  ${A.bold}${m.desc || "(no description)"}${A.reset}`);
+      lines.push(`     ${A.dim}${ellip(m.workerUrl || "", 54)}${A.reset}`);
+    });
+    lines.push(``);
+  }
+  lines.push(`${A.amber}number${A.reset} switch · ${A.amber}s${A.reset} save current${list.length ? ` · ${A.amber}dN${A.reset} delete #N` : ""} · ${A.dim}enter cancels${A.reset}`);
+  const ans = (await promptStart(lines, "")).trim().toLowerCase();
+  if (!ans) return setMsg("Cancelled.");
+  if (ans === "s") return saveMachine();
+  const del = /^d\s*0*(\d+)$/.exec(ans);
+  if (del) return deleteMachine(Number(del[1]) - 1);
+  const n = Number(ans);
+  if (Number.isInteger(n) && n >= 1 && n <= list.length) {
+    const m = list[n - 1];
+    state.workerUrl = m.workerUrl || ""; state.uuid = m.uuid || "";
+    saveConfig({ workerUrl: state.workerUrl, uuid: state.uuid });
+    return setMsg(A.green + `Switched to ${m.desc || "that machine"}.` + A.reset + ` ${A.dim}Press c to connect.${A.reset}`);
+  }
+  return setMsg(A.red + "Didn't recognize that - type a number, s, or dN." + A.reset);
+}
+
+async function saveMachine() {
+  if (!isWsUrl(state.workerUrl) || !isUuid(state.uuid)) {
+    return setMsg(A.red + "Set a server + key first (press w and u), then save." + A.reset);
+  }
+  const desc = (await promptLine("Name this machine (e.g. home VM, demo)", "")).trim();
+  const list = Array.isArray(state.machines) ? state.machines.slice() : [];
+  const entry = { desc: desc || "(no description)", workerUrl: state.workerUrl, uuid: state.uuid };
+  const idx = list.findIndex((m) => m.workerUrl === entry.workerUrl && m.uuid === entry.uuid);
+  if (idx >= 0) list[idx] = entry; else list.push(entry);          // update in place if already saved
+  state.machines = list; saveConfig({ machines: list });
+  return setMsg(A.green + `Saved "${entry.desc}".` + A.reset);
+}
+
+function deleteMachine(i) {
+  const list = Array.isArray(state.machines) ? state.machines.slice() : [];
+  if (!Number.isInteger(i) || i < 0 || i >= list.length) return setMsg(A.red + "No machine with that number." + A.reset);
+  const [removed] = list.splice(i, 1);
+  state.machines = list; saveConfig({ machines: list });
+  return setMsg(`Deleted "${removed.desc || "machine"}".`);
+}
+
 async function handleKey(k) {
   switch (k) {
     case "q": return quit();
@@ -664,6 +716,7 @@ async function handleKey(k) {
     case "c": return state.connected ? disconnect() : connect();
     case "t": return test();
     case "g": return regenKey();
+    case "m": return machines();
     case "p": state.view = "help"; return draw();
     case "w": {
       const v = await promptLine("Server address (wss://your-domain or wss://<ip>.sslip.io)", state.workerUrl);
