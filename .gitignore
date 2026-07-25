@@ -10,3 +10,6 @@ bin/
 
 # private developer / prototype notes - not part of the public docs
 NOTES.md
+
+# asciinema raw recordings (keep local; the rendered gif is committed)
+*.cast

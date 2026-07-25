@@ -114,36 +114,8 @@ h1,h2,h3,.faq-q,.btn-amber,.btn-out,.fl,.nl,.lc{text-transform:lowercase}
     </div>
   </div>
   <div style="flex:1 1 400px;min-width:300px;display:flex;justify-content:center">
-    <!-- Real TUI: fields, menu and status line as rendered by tui.js -->
-    <div style="width:100%;max-width:520px;background:#0E1014;border:1px solid rgba(0,175,175,.2);border-radius:12px;box-shadow:0 0 0 1px rgba(0,0,0,.4),0 32px 84px -34px rgba(0,0,0,.92),0 0 72px -30px rgba(255,175,0,.16);overflow:hidden;font-family:'JetBrains Mono',monospace">
-      <div style="display:flex;align-items:center;gap:9px;padding:11px 15px;background:rgba(255,255,255,.02);border-bottom:1px solid rgba(230,230,230,.07)">
-        <svg width="17" height="17" viewBox="0 0 64 64" aria-hidden="true" style="display:block"><path d="M24 11 H13 V53 H24" fill="none" stroke="#00AFAF" stroke-width="5"/><path d="M40 11 H51 V53 H40" fill="none" stroke="#00AFAF" stroke-width="5"/><circle cx="32" cy="32" r="6.5" fill="#FFAF00"/></svg>
-        <span style="font-size:13.5px;font-weight:700;color:#E6E6E6">collateral<span style="color:#FFAF00">_</span></span>
-        <span style="margin-left:auto;font-size:11px;color:#5FAF5F;font-weight:500">connected</span>
-      </div>
-      <div style="padding:15px 17px 14px;font-size:12.5px;line-height:1.5;color:#B4B4B8">
-        <!-- info panel -->
-        <div style="display:grid;grid-template-columns:max-content 1fr;gap:5px 18px">
-          <span style="color:#6C6E76">proxy</span><span><span style="color:#00AFAF">socks5</span>&#160;&#160;127.0.0.1:1080</span>
-          <span style="color:#6C6E76">endpoint</span><span style="color:#E6E6E6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">wss://example.com/9f3a2c7b</span>
-          <span style="color:#6C6E76">key</span><span style="color:#E6E6E6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">3d9a7f2e-1c84-4b6d-a05f-8e21c9b4d7f0</span>
-          <span style="color:#6C6E76">exit ip</span><span style="color:#00AFAF">203.0.113.42</span>
-          <span style="color:#6C6E76">transport</span><span style="color:#FFAF00">VLESS &#183; WebSocket &#183; TLS &#183; :443</span>
-        </div>
-        <!-- menu -->
-        <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(230,230,230,.07);display:grid;grid-template-columns:1fr 1fr;gap:5px 14px;font-size:12px">
-          <span><span class="tui-k">s</span>&#160; <span style="color:#E6E6E6">first-time setup</span></span><span><span class="tui-k">c</span>&#160; disconnect</span>
-          <span><span class="tui-k">t</span>&#160; test connection</span><span><span class="tui-k">w</span>&#160; set server address</span>
-          <span><span class="tui-k">u</span>&#160; set access key</span><span><span class="tui-k">g</span>&#160; generate new key</span>
-          <span><span class="tui-k">d</span>&#160; system proxy: <span style="color:#8A8A8A">off</span></span><span><span class="tui-k">f</span>&#160; full tunnel: <span style="color:#5FAF5F">on</span></span>
-          <span><span class="tui-k">x</span>&#160; share config (QR)</span><span><span class="tui-k">i</span>&#160; import (scan QR)</span>
-          <span><span class="tui-k">p</span>&#160; proxy setup help</span><span><span class="tui-k">q</span>&#160; quit</span>
-        </div>
-        <!-- status line -->
-        <div style="margin-top:12px;padding-top:11px;border-top:1px solid rgba(230,230,230,.07);font-size:12.5px;color:#B4B4B8">
-          <span style="color:#6C6E76">&#8250;</span> Connected, traffic exits via <span style="color:#00AFAF">203.0.113.42</span>.<span style="display:inline-block;width:7px;height:14px;background:#FFAF00;margin-left:5px;vertical-align:-2px;animation:blink 1.1s step-end infinite"></span>
-        </div>
-      </div>
+    <div style="width:100%;max-width:560px;border:1px solid rgba(0,175,175,.2);border-radius:12px;overflow:hidden;background:#0E1014;box-shadow:0 0 0 1px rgba(0,0,0,.4),0 32px 84px -34px rgba(0,0,0,.92),0 0 72px -30px rgba(255,175,0,.16)">
+      <img src="demo.gif" alt="Collateral in the terminal: connecting, testing the tunnel, turning on the full device-wide tunnel, and sharing the config as a QR code" style="display:block;width:100%;height:auto">
     </div>
   </div>
 </header>
