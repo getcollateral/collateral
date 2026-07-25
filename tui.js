@@ -69,6 +69,7 @@ const isUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 const DEMO_UUID = "00000000-0000-0000-0000-000000000000";
 const DEMO_EXIT_IP = "203.0.113.42"; // RFC 5737 documentation range - obviously not a real host
 const isDemo = () => state.uuid === DEMO_UUID;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
 const visLen = (s) => stripAnsi(s).length;
@@ -364,7 +365,11 @@ function startSocks(workerUrl, uuid, port) {
 async function connect() {
   if (!isWsUrl(state.workerUrl)) return setMsg(A.red + "Set a server address first (wss://…). Press w." + A.reset);
   if (!isUuid(state.uuid)) return setMsg(A.red + "Set a valid access key first. Press u or g." + A.reset);
-  if (isDemo()) {  // screenshot/recording mode: show the connected UI, touch no network
+  if (isDemo()) {  // recording mode: play the real connect animation, touch no network
+    state.busy = true; state.busyText = "connecting…"; draw();
+    await sleep(600);
+    state.busyText = "testing tunnel…"; draw();
+    await sleep(800);
     state.socksPort = 1080; state.exitIP = DEMO_EXIT_IP;
     state.connected = true; state.reconnecting = false; state.busy = false;
     return setMsg(A.green + `Connected, traffic exits via ${DEMO_EXIT_IP}.` + A.reset);
@@ -446,7 +451,9 @@ async function toggleTun() {
   if (isDemo()) {  // display-only in recording mode
     if (state.tunActive) { state.tunActive = false; return setMsg("Full tunnel off, networking restored."); }
     if (!state.connected) return setMsg(A.red + "Connect first. The full tunnel routes every app through the tunnel." + A.reset);
-    state.systemProxy = false; state.tunActive = true;
+    state.busy = true; state.busyText = "starting full tunnel…"; draw();
+    await sleep(700);
+    state.systemProxy = false; state.tunActive = true; state.busy = false;
     return setMsg(A.green + "Full tunnel ON, every app's TCP now routes through the server." + A.reset + `  ${A.dim}(press f to turn off)${A.reset}`);
   }
   if (!tun.supported()) return setMsg(A.red + "Full tunnel is available on macOS and Linux only (Windows is coming)." + A.reset);
@@ -488,7 +495,11 @@ async function toggleSystemProxy() {
   if (isDemo()) {  // display-only in recording mode
     const turnOn = !state.systemProxy;
     if (turnOn && !state.connected) return setMsg(A.red + "Connect first. Device-wide routes every app through the tunnel." + A.reset);
-    if (turnOn) state.tunActive = false;
+    if (turnOn) {
+      state.busy = true; state.busyText = "enabling system proxy…"; draw();
+      await sleep(500);
+      state.tunActive = false; state.busy = false;
+    }
     state.systemProxy = turnOn;
     return setMsg(turnOn
       ? A.green + "Device-wide ON, every app now routes through the tunnel." + A.reset + `  ${A.dim}(press d to turn off before quitting)${A.reset}`
