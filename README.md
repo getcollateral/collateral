@@ -55,7 +55,27 @@ A full-screen terminal app - clickable, live status, zero dependencies. The bran
 **is** the status light: filled when connected, empty `[ ]` when idle, a spinner while it's
 working.
 
-![Collateral — the terminal control panel: connecting, testing the tunnel, and turning on the full device-wide tunnel](assets/demo.gif)
+```
+  ╭──────────────────────────────────────────────────╮
+  │ [•] collateral                         connected │
+  │ your own private proxy                           │
+  ├──────────────────────────────────────────────────┤
+  │ proxy      socks5  127.0.0.1:1080                │
+  │ endpoint   wss://161.33.237.170.sslip.io/coll…   │
+  │ key        dc592984-437f-4d0f-9c28-9f0fe354f260  │
+  │ exit ip    161.33.237.170                        │
+  │ transport  VLESS · WebSocket · TLS · :443        │
+  ├──────────────────────────────────────────────────┤
+  │ s  first-time setup      c  disconnect           │
+  │ t  test connection       w  set server address   │
+  │ u  set access key        g  generate new key     │
+  │ d  system proxy: off     f  full tunnel: off     │
+  │ x  share config (QR)     i  import (scan QR)     │
+  │ p  proxy setup help      q  quit                 │
+  ├──────────────────────────────────────────────────┤
+  │ › Connected - traffic exits via 161.33.237.170.  │
+  ╰──────────────────────────────────────────────────╯
+```
 
 **Click** any row, or use the keys:
 
