@@ -62,6 +62,14 @@ const HEALTH_OK_MS = Number(process.env.COLLATERAL_HEALTH_MS) || 30000; // healt
 const isWsUrl = (s) => /^wss?:\/\/[^\s]+$/i.test(s || "");
 const isUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s || "");
 
+// Demo/recording mode. Enter the nil UUID as the access key (with any wss:// endpoint) and the
+// panel shows "connected" - and d/f toggle on - while touching NO network at all. It's for clean
+// screenshots and screen recordings without exposing a real server. Not a backdoor: it only
+// changes what's DISPLAYED; it never opens a socket, proxies, or routes a single packet.
+const DEMO_UUID = "00000000-0000-0000-0000-000000000000";
+const DEMO_EXIT_IP = "203.0.113.42"; // RFC 5737 documentation range - obviously not a real host
+const isDemo = () => state.uuid === DEMO_UUID;
+
 const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
 const visLen = (s) => stripAnsi(s).length;
 const ellip = (s, n) => (s.length <= n ? s : s.slice(0, Math.max(1, n - 1)) + "…");
@@ -356,6 +364,11 @@ function startSocks(workerUrl, uuid, port) {
 async function connect() {
   if (!isWsUrl(state.workerUrl)) return setMsg(A.red + "Set a server address first (wss://…). Press w." + A.reset);
   if (!isUuid(state.uuid)) return setMsg(A.red + "Set a valid access key first. Press u or g." + A.reset);
+  if (isDemo()) {  // screenshot/recording mode: show the connected UI, touch no network
+    state.socksPort = 1080; state.exitIP = DEMO_EXIT_IP;
+    state.connected = true; state.reconnecting = false; state.busy = false;
+    return setMsg(A.green + `Connected, traffic exits via ${DEMO_EXIT_IP}.` + A.reset);
+  }
   state.busy = true; state.busyText = "connecting…"; draw();
   try {
     try { socks = await startSocks(state.workerUrl, state.uuid, 1080); }
@@ -376,6 +389,12 @@ async function connect() {
 }
 
 async function disconnect() {
+  if (isDemo()) {  // demo mode was display-only; just reset the flags, nothing real to tear down
+    state.tunActive = false; state.systemProxy = false;
+    state.connected = false; state.reconnecting = false; state.socksPort = null; state.exitIP = null;
+    stopHealthMonitor();
+    return setMsg("Disconnected.");
+  }
   // Turn off device-wide capture FIRST - leaving the system proxy or the TUN pointed at a dead
   // tunnel would break the user's internet.
   if (state.tunActive) {
@@ -424,6 +443,12 @@ async function healthTick() {
 // Full-tunnel (TUN): true device-wide capture of all TCP via a utun, using our existing tunnel.
 // Mutually exclusive with the system SOCKS proxy. Needs admin (one GUI prompt) and macOS.
 async function toggleTun() {
+  if (isDemo()) {  // display-only in recording mode
+    if (state.tunActive) { state.tunActive = false; return setMsg("Full tunnel off, networking restored."); }
+    if (!state.connected) return setMsg(A.red + "Connect first. The full tunnel routes every app through the tunnel." + A.reset);
+    state.systemProxy = false; state.tunActive = true;
+    return setMsg(A.green + "Full tunnel ON, every app's TCP now routes through the server." + A.reset + `  ${A.dim}(press f to turn off)${A.reset}`);
+  }
   if (!tun.supported()) return setMsg(A.red + "Full tunnel is available on macOS and Linux only (Windows is coming)." + A.reset);
   if (state.tunActive) {
     state.busy = true; state.busyText = "turning off full tunnel…"; draw();
@@ -460,6 +485,15 @@ async function toggleTun() {
 }
 
 async function toggleSystemProxy() {
+  if (isDemo()) {  // display-only in recording mode
+    const turnOn = !state.systemProxy;
+    if (turnOn && !state.connected) return setMsg(A.red + "Connect first. Device-wide routes every app through the tunnel." + A.reset);
+    if (turnOn) state.tunActive = false;
+    state.systemProxy = turnOn;
+    return setMsg(turnOn
+      ? A.green + "Device-wide ON, every app now routes through the tunnel." + A.reset + `  ${A.dim}(press d to turn off before quitting)${A.reset}`
+      : "Device-wide off, apps use your normal connection again.");
+  }
   if (!sysproxySupported()) return setMsg(A.red + "Device-wide is macOS-only here. Set your OS proxy manually (press p)." + A.reset);
   if (!state.netService) state.netService = await primaryService();
   if (!state.netService) return setMsg(A.red + "Couldn't find your network service." + A.reset);
@@ -478,6 +512,7 @@ async function toggleSystemProxy() {
 
 async function test() {
   if (!state.connected) return setMsg(A.red + "Connect first. Press c." + A.reset);
+  if (isDemo()) return setMsg(A.teal + `Traffic exits via ${DEMO_EXIT_IP}.` + A.reset);
   state.busy = true; state.busyText = "testing…"; draw();
   try {
     const ip = await getExitIP(state.socksPort);
@@ -686,7 +721,7 @@ function cleanup() {
   stopHealthMonitor();
   // Signal the root TUN session to tear down (restores routing). Synchronous file touch, safe
   // here; the session also self-heals via its owner-PID watchdog if this never runs.
-  if (state.tunActive) tun.requestStopSync();
+  if (state.tunActive && !isDemo()) tun.requestStopSync();
   if (socks) { try { socks.close(); } catch {} }
   try { process.stdin.setRawMode(false); } catch {}
   // Synchronous write so the terminal is restored even though process.exit() follows -
@@ -698,12 +733,12 @@ async function quit() {
   if (quitting) return;
   quitting = true;
   // Best-effort: don't leave the user's traffic pointed at a dead proxy/TUN on exit.
-  if (state.tunActive) {
+  if (state.tunActive && !isDemo()) {
     state.busy = true; state.busyText = "restoring network…"; draw();
     try { await tun.stopTun(); } catch {}
     state.tunActive = false;
   }
-  if (state.systemProxy && state.netService) {
+  if (state.systemProxy && state.netService && !isDemo()) {
     state.busy = true; state.busyText = "restoring network…"; draw();
     try { await setSocks(state.netService, false); } catch {}
   }
