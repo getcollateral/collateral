@@ -59,6 +59,7 @@ const READY_FILE = path.join(DIR, "tun.ready");
 const OWNER_FILE = path.join(DIR, "tun.owner");
 const SESSION_SH = path.join(DIR, "tun-session.sh");
 const LOG_FILE = path.join(DIR, "tun.log");
+const KS_FILE = path.join(DIR, "killswitch.pf.conf");   // macOS pf anchor rules for the kill switch
 
 const IS_LINUX = process.platform === "linux";
 export function supported() { return process.platform === "darwin" || IS_LINUX; }
@@ -123,6 +124,44 @@ export function parseResolvectl(text) {
     for (const m of line.matchAll(/(\d+\.\d+\.\d+\.\d+)/g)) if (!isPrivateIp(m[1])) ips.add(m[1]);
   }
   return [...ips];
+}
+
+// --- Kill switch (fail-closed) rule generation. Pure, so it's unit-testable. ---
+// The lockdown blocks ALL egress except: loopback, the tun device, the server's own IP (so the
+// tunnel can stay up / reconnect), and DNS. It's independent of the utun, so if tun2socks dies
+// nothing leaks - the exact hole the auto-vanishing /1 routes can't cover.
+
+// macOS pf anchor body. `quick` = first-match-wins, so the passes short-circuit before the block.
+export function pfKillSwitchRules(serverIp, dnsIps = [], dev = "") {
+  return [
+    "pass quick on lo0 all",
+    dev ? `pass quick on ${dev} all` : null,
+    `pass out quick inet proto tcp to ${serverIp}`,
+    `pass out quick inet proto udp to ${serverIp}`,
+    dnsIps.length ? `pass out quick inet proto { tcp udp } to { ${dnsIps.join(" ")} } port 53` : null,
+    "block drop out inet all",
+  ].filter(Boolean).join("\n") + "\n";
+}
+
+// Linux: a dedicated COLLATERAL_KS chain hooked at the top of OUTPUT (non-destructive, easy to
+// remove cleanly). Returns the setup command lines.
+export function iptablesKillSwitchSetup(serverIp, dnsIps = [], dev = "") {
+  return [
+    "iptables -N COLLATERAL_KS 2>/dev/null || iptables -F COLLATERAL_KS",
+    "iptables -A COLLATERAL_KS -o lo -j ACCEPT",
+    dev ? `iptables -A COLLATERAL_KS -o ${dev} -j ACCEPT` : null,
+    `iptables -A COLLATERAL_KS -d ${serverIp} -j ACCEPT`,
+    ...dnsIps.map((d) => `iptables -A COLLATERAL_KS -d ${d} -j ACCEPT`),
+    "iptables -A COLLATERAL_KS -j DROP",
+    "iptables -C OUTPUT -j COLLATERAL_KS 2>/dev/null || iptables -I OUTPUT 1 -j COLLATERAL_KS",
+  ].filter(Boolean).join("\n");
+}
+export function iptablesKillSwitchTeardown() {
+  return [
+    "iptables -D OUTPUT -j COLLATERAL_KS 2>/dev/null || true",
+    "iptables -F COLLATERAL_KS 2>/dev/null || true",
+    "iptables -X COLLATERAL_KS 2>/dev/null || true",
+  ].join("\n");
 }
 
 // Pick a utun index not currently in use (macOS system uses low ones; stay high).
@@ -196,9 +235,39 @@ export async function ensureBinary(onLog = () => {}) {
 
 // The root session script. It owns tun2socks, applies the routing, then blocks until asked to
 // stop / the app dies / tun2socks dies - and always tears down on the way out (trap on EXIT).
-export function sessionScript({ dev, socksPort, serverIp, dnsIps, service, ownerPid }) {
+export function sessionScript({ dev, socksPort, serverIp, dnsIps, service, ownerPid, killSwitch = false }) {
   const dnsAdd = dnsIps.map((d) => `route -n add -host ${d} "$GW" 2>/dev/null || true`).join("\n  ");
   const dnsDel = dnsIps.map((d) => `route -n delete -host ${d} 2>/dev/null || true`).join("\n  ");
+  const ksSetup = killSwitch ? `
+# kill switch: lock down all egress except loopback, the tun, the server, and DNS. Independent of
+# the utun, so nothing leaks even if tun2socks crashes.
+cat > ${JSON.stringify(KS_FILE)} <<'PFEOF'
+${pfKillSwitchRules(serverIp, dnsIps, dev)}PFEOF
+KSTOKEN=$(pfctl -E 2>&1 | awk '/Token/{print $3; exit}')
+{ cat /etc/pf.conf 2>/dev/null; printf 'anchor "collateral"\\nload anchor "collateral" from "%s"\\n' ${JSON.stringify(KS_FILE)}; } | pfctl -f - 2>/dev/null || true` : "";
+  const ksTeardown = killSwitch ? `
+  pfctl -a collateral -F all 2>/dev/null || true
+  pfctl -f /etc/pf.conf 2>/dev/null || true
+  [ -n "\${KSTOKEN:-}" ] && pfctl -X "$KSTOKEN" 2>/dev/null || true
+  rm -f ${JSON.stringify(KS_FILE)}` : "";
+  const holdLoop = killSwitch ? `
+# kill-switch mode: keep the lockdown even if tun2socks dies; relaunch it to self-repair. Stop only
+# on request or when the app is gone - then the trap flushes the firewall and heals the network.
+while [ ! -f "$STOP" ] && kill -0 "$OWNER" 2>/dev/null; do
+  if ! kill -0 "\${TPID:-0}" 2>/dev/null; then
+    "$BIN" --device "$DEV" --proxy "socks5://127.0.0.1:$SOCKS" --loglevel warn &
+    TPID=$!
+    for i in $(seq 1 60); do ifconfig "$DEV" >/dev/null 2>&1 && break; sleep 0.1; done
+    ifconfig "$DEV" "$ADDR" "$ADDR" up 2>/dev/null || true
+    route -n add -net 0.0.0.0/1 "$ADDR" 2>/dev/null || true
+    route -n add -net 128.0.0.0/1 "$ADDR" 2>/dev/null || true
+  fi
+  sleep 1
+done` : `
+# hold until: stop requested, app gone, or tun2socks died - then the trap heals the network
+while [ ! -f "$STOP" ] && kill -0 "$OWNER" 2>/dev/null && kill -0 "$TPID" 2>/dev/null; do
+  sleep 1
+done`;
   return `#!/bin/bash
 # Collateral TUN session - runs as root. Self-heals on exit.
 set -u
@@ -217,7 +286,7 @@ cleanup() {
   [ -n "\${TPID:-}" ] && kill "$TPID" 2>/dev/null
   route -n delete -host "$SERVER_IP" 2>/dev/null || true
   ${dnsDel || ": no public dns to unroute"}
-  [ -n "$SERVICE" ] && networksetup -setv6automatic "$SERVICE" 2>/dev/null || true  # restore IPv6
+  [ -n "$SERVICE" ] && networksetup -setv6automatic "$SERVICE" 2>/dev/null || true  # restore IPv6${ksTeardown}
   # the /1 routes + the utun itself disappear automatically when tun2socks exits
   rm -f "$STOP" "$READY"
 }
@@ -239,21 +308,42 @@ route -n add -net 128.0.0.0/1 "$ADDR"            # ...without ever touching the 
 # IPv6: the TUN is v4-only, so disable v6 on the primary service - otherwise v6 traffic bypasses
 # the tunnel. cleanup() restores it to automatic. (DNS stays direct; tunnelling it needs a local
 # forwarder, a separate TODO - macOS mDNSResponder doesn't follow the utun routes.)
-[ -n "$SERVICE" ] && networksetup -setv6off "$SERVICE" 2>/dev/null || true
+[ -n "$SERVICE" ] && networksetup -setv6off "$SERVICE" 2>/dev/null || true${ksSetup}
 touch "$READY"
-
-# hold until: stop requested, app gone, or tun2socks died - then the trap heals the network
-while [ ! -f "$STOP" ] && kill -0 "$OWNER" 2>/dev/null && kill -0 "$TPID" 2>/dev/null; do
-  sleep 1
-done
+${holdLoop}
 `;
 }
 
 // The Linux root session script. Same shape as the macOS one, but driven by `ip` instead of
 // `route`/`ifconfig`/`networksetup`, and IPv6 toggled via sysctl. Run as root via pkexec.
-export function linuxSessionScript({ dev, socksPort, serverIp, dnsIps, ownerPid }) {
+export function linuxSessionScript({ dev, socksPort, serverIp, dnsIps, ownerPid, killSwitch = false }) {
   const dnsAdd = dnsIps.map((d) => `ip route add ${d}/32 via "$GW" dev "$OIF" 2>/dev/null || ip route add ${d}/32 via "$GW" 2>/dev/null || true`).join("\n");
   const dnsDel = dnsIps.map((d) => `ip route del ${d}/32 2>/dev/null || true`).join("\n  ");
+  const ksSetup = killSwitch ? `
+# kill switch: block all egress except loopback, the tun, the server, and DNS. Survives a
+# tun2socks crash, so nothing leaks while the tunnel is down.
+${iptablesKillSwitchSetup(serverIp, dnsIps, dev)}` : "";
+  const ksTeardown = killSwitch ? `
+  ${iptablesKillSwitchTeardown().split("\n").join("\n  ")}` : "";
+  const holdLoop = killSwitch ? `
+# kill-switch mode: keep the lockdown even if tun2socks dies; relaunch it to self-repair. Stop only
+# on request or when the app is gone - then the trap flushes the firewall and heals the network.
+while [ ! -f "$STOP" ] && kill -0 "$OWNER" 2>/dev/null; do
+  if ! kill -0 "\${TPID:-0}" 2>/dev/null; then
+    "$BIN" --device "tun://$DEV" --proxy "socks5://127.0.0.1:$SOCKS" --loglevel warn &
+    TPID=$!
+    for i in $(seq 1 60); do ip link show "$DEV" >/dev/null 2>&1 && break; sleep 0.1; done
+    ip addr add "$ADDR"/32 dev "$DEV" 2>/dev/null || true
+    ip link set "$DEV" up 2>/dev/null || true
+    ip route add 0.0.0.0/1 dev "$DEV" 2>/dev/null || true
+    ip route add 128.0.0.0/1 dev "$DEV" 2>/dev/null || true
+  fi
+  sleep 1
+done` : `
+# hold until: stop requested, app gone, or tun2socks died - then the trap heals the network
+while [ ! -f "$STOP" ] && kill -0 "$OWNER" 2>/dev/null && kill -0 "$TPID" 2>/dev/null; do
+  sleep 1
+done`;
   return `#!/bin/bash
 # Collateral TUN session (Linux) - runs as root. Self-heals on exit.
 set -u
@@ -277,7 +367,7 @@ cleanup() {
   [ -n "\${TPID:-}" ] && kill "$TPID" 2>/dev/null
   ip route del "$SERVER_IP"/32 2>/dev/null || true
   ${dnsDel || ": no public dns to unroute"}
-  sysctl -w net.ipv6.conf.all.disable_ipv6="$V6WAS" >/dev/null 2>&1 || true
+  sysctl -w net.ipv6.conf.all.disable_ipv6="$V6WAS" >/dev/null 2>&1 || true${ksTeardown}
   # the /1 routes + the tun device disappear automatically when tun2socks exits
   rm -f "$STOP" "$READY"
 }
@@ -297,13 +387,9 @@ ${dnsAdd || ": no public dns to route"}
 ip route add 0.0.0.0/1 dev "$DEV"       # capture everything via the tun...
 ip route add 128.0.0.0/1 dev "$DEV"     # ...without touching the real default route
 # IPv6 leak guard: v4-only tun, so disable v6 while up (restored in cleanup)
-sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1 || true
+sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1 || true${ksSetup}
 touch "$READY"
-
-# hold until: stop requested, app gone, or tun2socks died - then the trap heals the network
-while [ ! -f "$STOP" ] && kill -0 "$OWNER" 2>/dev/null && kill -0 "$TPID" 2>/dev/null; do
-  sleep 1
-done
+${holdLoop}
 `;
 }
 
@@ -313,7 +399,7 @@ const asEsc = (s) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 // Start device-wide TUN. Needs the SOCKS client already listening on `socksPort`. Prompts once
 // for admin (GUI). Resolves when the interface is up and routed; rejects with the log tail on
 // failure. Reuses the existing tunnel - no server changes.
-export async function startTun({ socksPort, serverHost, onLog = () => {} }) {
+export async function startTun({ socksPort, serverHost, onLog = () => {}, killSwitch = false }) {
   if (!supported()) throw new Error("Device-wide tunnel is supported on macOS and Linux.");
   await ensureBinary(onLog);
   const serverIp = await resolveServerIp(serverHost);
@@ -325,7 +411,7 @@ export async function startTun({ socksPort, serverHost, onLog = () => {} }) {
 
   onLog("requesting admin access (one prompt)…");
   if (IS_LINUX) {
-    fs.writeFileSync(SESSION_SH, linuxSessionScript({ dev, socksPort, serverIp, dnsIps, ownerPid: process.pid }));
+    fs.writeFileSync(SESSION_SH, linuxSessionScript({ dev, socksPort, serverIp, dnsIps, ownerPid: process.pid, killSwitch }));
     // pkexec pops the polkit prompt and runs the session as root; setsid + & detaches it so this
     // call returns immediately and we then wait on the READY flag.
     const inner = `setsid bash '${SESSION_SH}' </dev/null >'${LOG_FILE}' 2>&1 &`;
@@ -337,7 +423,7 @@ export async function startTun({ socksPort, serverHost, onLog = () => {} }) {
     }
   } else {
     const service = await primaryService().catch(() => ""); // for IPv6 leak control (may be "")
-    fs.writeFileSync(SESSION_SH, sessionScript({ dev, socksPort, serverIp, dnsIps, service, ownerPid: process.pid }));
+    fs.writeFileSync(SESSION_SH, sessionScript({ dev, socksPort, serverIp, dnsIps, service, ownerPid: process.pid, killSwitch }));
     // No nohup: under `do shell script … with administrator privileges` there's no controlling
     // terminal, so nohup errors ("can't detach from console"). Redirecting all three fds and
     // backgrounding detaches it cleanly; with no tty there's no SIGHUP to survive, and the job
@@ -383,7 +469,14 @@ export async function isActive() {
 // Small CLI for recovery: `node common/tun.js status|down`.
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const cmd = process.argv[2];
-  if (cmd === "down") { requestStopSync(); console.log("Stop requested. If a TUN was active it will tear down within ~1s."); }
+  if (cmd === "down") {
+    requestStopSync();
+    console.log("Stop requested. If a TUN was active it will tear down within ~1s (kill switch flushed with it).");
+    console.log("If a kill switch was ever left on after a hard crash, restore networking with:");
+    console.log(IS_LINUX
+      ? "  sudo iptables -D OUTPUT -j COLLATERAL_KS; sudo iptables -F COLLATERAL_KS; sudo iptables -X COLLATERAL_KS"
+      : "  sudo pfctl -f /etc/pf.conf   (then `sudo pfctl -d` if pf wasn't already on before)");
+  }
   else if (cmd === "status") {
     console.log("binary:", fs.existsSync(BIN) ? BIN : "(not downloaded)");
     console.log("ready flag:", fs.existsSync(READY_FILE) ? "present (a session may be active)" : "absent");

@@ -222,6 +222,7 @@ function buildBox(s) {
       row("traffic", `${A.green}↓${A.reset} ${fmtRate(s.downRate)}   ${A.teal}↑${A.reset} ${fmtRate(s.upRate)}   ${A.dim}${fmtBytes(s.totalBytes)}${A.reset}`),
       row("ping", s.latency != null ? `${latColor(s.latency)}${s.latency} ms${A.reset}  ${latBar(s.latency)}` : `${A.dim}measuring…${A.reset}`),
     ] : []),
+    ...(s.tunActive && s.tunKillSwitch ? [row("kill switch", `${A.amber}armed${A.reset} ${A.dim}- blocks traffic if the tunnel drops${A.reset}`)] : []),
     SEP,
   );
 
@@ -462,7 +463,7 @@ async function disconnect() {
   if (state.tunActive) {
     state.busy = true; state.busyText = "turning off full tunnel…"; draw();
     try { await tun.stopTun(); } catch {}
-    state.tunActive = false; state.busy = false;
+    state.tunActive = false; state.tunKillSwitch = false; state.busy = false;
   }
   if (state.systemProxy && state.netService) {
     state.busy = true; state.busyText = "turning off system proxy…"; draw();
@@ -502,7 +503,12 @@ async function healthTick() {
       return setMsg(A.red + "Access revoked - your key no longer works on this server. Press c to disconnect." + A.reset);
     }
     healthFails++;
-    if (healthFails >= 2 && !state.reconnecting) { state.reconnecting = true; setMsg(A.amber + "Tunnel unreachable, reconnecting automatically…" + A.reset); }
+    if (healthFails >= 2 && !state.reconnecting) {
+      state.reconnecting = true;
+      setMsg(A.amber + (state.tunKillSwitch
+        ? "Tunnel down - traffic BLOCKED by the kill switch, reconnecting…"
+        : "Tunnel unreachable, reconnecting automatically…") + A.reset);
+    }
     scheduleHealth(healthFails >= 2 ? Math.min(8000, HEALTH_OK_MS) : Math.min(4000, HEALTH_OK_MS));
   }
 }
@@ -582,12 +588,12 @@ async function toggleTun() {
   if (state.tunActive) {
     state.busy = true; state.busyText = "turning off full tunnel…"; draw();
     const ok = await tun.stopTun();
-    state.tunActive = false; state.busy = false;
+    state.tunActive = false; state.tunKillSwitch = false; state.busy = false;
     return setMsg(ok ? "Full tunnel off, networking restored." : A.red + "Couldn't confirm teardown. Check `node common/tun.js status`." + A.reset);
   }
   if (!state.connected) return setMsg(A.red + "Connect first. The full tunnel routes every app through the tunnel." + A.reset);
   if (state.systemProxy) { try { await setSocks(state.netService, false); } catch {} state.systemProxy = false; } // exclusive
-  const go = await confirmWord([
+  const ans = (await promptStart([
     `${A.amber}${A.bold}Full tunnel (device-wide TUN)${A.reset}`,
     ``,
     `This captures ${A.bold}all TCP traffic${A.reset} from every app at the network layer -`,
@@ -595,20 +601,25 @@ async function toggleTun() {
     ``,
     `• Needs ${A.bold}admin${A.reset} once (a macOS password dialog).`,
     `• First time, downloads a small verified helper (~4 MB).`,
-    `• ${A.dim}UDP/QUIC isn't relayed yet (server is TCP-only). Browsers fall back to TCP.${A.reset}`,
+    `• ${A.bold}Kill switch${A.reset} (type ${A.amber}lock${A.reset}): if the tunnel drops, ${A.bold}block${A.reset} traffic`,
+    `  instead of falling back to your normal connection - no leak.`,
     `• Turns off automatically on disconnect, quit, or if this app crashes.`,
     ``,
-    `Type ${A.amber}yes${A.reset} to continue, or enter to cancel.`,
-  ], "yes");
-  if (!go) { draw(); return setMsg("Full tunnel cancelled."); }
+    `Type ${A.amber}yes${A.reset} to start, ${A.amber}lock${A.reset} for the kill switch, or enter to cancel.`,
+  ], "")).trim().toLowerCase();
+  if (ans !== "yes" && ans !== "lock") { draw(); return setMsg("Full tunnel cancelled."); }
+  const killSwitch = ans === "lock";
   state.busy = true; state.busyText = "starting full tunnel…"; draw();
   try {
     const host = new URL(state.workerUrl).host;
-    await tun.startTun({ socksPort: state.socksPort, serverHost: host, onLog: (m) => { state.busyText = m; draw(); } });
-    state.tunActive = true; state.busy = false;
-    setMsg(A.green + "Full tunnel ON, every app's TCP now routes through the server." + A.reset + `  ${A.dim}(press f to turn off)${A.reset}`);
+    await tun.startTun({ socksPort: state.socksPort, serverHost: host, killSwitch, onLog: (m) => { state.busyText = m; draw(); } });
+    state.tunActive = true; state.tunKillSwitch = killSwitch; state.busy = false;
+    saveConfig({ killSwitch });
+    setMsg(A.green + (killSwitch
+      ? "Full tunnel ON, kill switch armed - if the tunnel drops, traffic is blocked (no leak)."
+      : "Full tunnel ON, every app's TCP now routes through the server.") + A.reset + `  ${A.dim}(press f to turn off)${A.reset}`);
   } catch (e) {
-    state.tunActive = false; state.busy = false;
+    state.tunActive = false; state.tunKillSwitch = false; state.busy = false;
     setMsg(A.red + `Full tunnel failed: ${e.message || e}` + A.reset);
   }
 }

@@ -108,6 +108,12 @@ Works on **macOS and Linux** (Windows is planned). It asks for your password onc
 system dialog on macOS, a polkit prompt on Linux), then runs safely in the background: it never
 touches your normal network routes, and if anything goes wrong it heals itself automatically.
 
+**Kill switch (optional, fail-closed).** When you start the full tunnel, type `lock` instead of
+`yes` to arm a kill switch. If the tunnel ever drops, your traffic is **blocked** rather than
+leaking out over your normal connection - a firewall lockdown that only lets the tunnel's own
+packets and DNS through. It self-repairs (relaunches the tunnel automatically) and always releases
+on disconnect, quit, or crash, so you can never be stranded offline.
+
 ---
 
 ## Move your config to another Mac - no typing (`x` → `i`)

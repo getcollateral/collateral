@@ -18,7 +18,7 @@ import { FrameParser, encodeFrame, OPCODES } from "./common/ws-frame.js";
 import { renderFrame, hitTest, fmtBytes, latLevel, pickFastest } from "./tui.js";
 import { parseEndpoint } from "./common/doctor.js";
 import { parseKeys } from "./worker-shim.js";
-import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun, parseLinuxDefaultRoute, parseResolvConf, parseResolvectl, firstFreeTun } from "./common/tun.js";
+import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun, parseLinuxDefaultRoute, parseResolvConf, parseResolvectl, firstFreeTun, pfKillSwitchRules, iptablesKillSwitchSetup, iptablesKillSwitchTeardown } from "./common/tun.js";
 import { normalizeDomain } from "./provision/vps.js";
 
 const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
@@ -316,6 +316,34 @@ test("TUN(linux): resolv.conf public resolvers, skipping the systemd-resolved st
 test("TUN(linux): firstFreeTun picks the first unused collateralN", () => {
   assert.equal(firstFreeTun("lo eth0 collateral0 collateral1"), "collateral2");
   assert.equal(firstFreeTun("lo eth0 wlan0"), "collateral0");
+});
+
+test("kill switch (macOS pf): blocks all egress but loopback, tun, server, DNS", () => {
+  const rules = pfKillSwitchRules("203.0.113.9", ["1.1.1.1", "8.8.8.8"], "utun123");
+  assert.match(rules, /pass quick on lo0 all/);
+  assert.match(rules, /pass quick on utun123 all/);
+  assert.match(rules, /pass out quick inet proto tcp to 203\.0\.113\.9/);        // server reachable
+  assert.match(rules, /to \{ 1\.1\.1\.1 8\.8\.8\.8 \} port 53/);                 // DNS reachable
+  assert.match(rules, /block drop out inet all/);                               // everything else blocked
+  // the block must come LAST so the quick passes win first
+  assert.ok(rules.trim().endsWith("block drop out inet all"));
+  // no DNS servers -> no DNS pass line at all
+  assert.ok(!/port 53/.test(pfKillSwitchRules("203.0.113.9", [], "utun9")));
+});
+
+test("kill switch (Linux iptables): dedicated chain hooked into OUTPUT, cleanly removed", () => {
+  const setup = iptablesKillSwitchSetup("203.0.113.9", ["1.1.1.1"], "collateral0");
+  assert.match(setup, /-A COLLATERAL_KS -o lo -j ACCEPT/);
+  assert.match(setup, /-A COLLATERAL_KS -o collateral0 -j ACCEPT/);
+  assert.match(setup, /-A COLLATERAL_KS -d 203\.0\.113\.9 -j ACCEPT/);
+  assert.match(setup, /-A COLLATERAL_KS -d 1\.1\.1\.1 -j ACCEPT/);
+  assert.match(setup, /-A COLLATERAL_KS -j DROP/);
+  assert.match(setup, /-I OUTPUT 1 -j COLLATERAL_KS/);
+  // DROP must be appended before the chain is hooked, so it's the chain's last rule
+  assert.ok(setup.indexOf("-j DROP") < setup.indexOf("-I OUTPUT"));
+  const down = iptablesKillSwitchTeardown();
+  assert.match(down, /-D OUTPUT -j COLLATERAL_KS/);
+  assert.match(down, /-X COLLATERAL_KS/);
 });
 
 test("server: parseKeys builds the allowed set (labels/blank/garbage ignored, deduped)", () => {
