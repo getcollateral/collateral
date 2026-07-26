@@ -19,6 +19,7 @@ import { renderFrame, hitTest, fmtBytes, latLevel, pickFastest, mergeBy, buildBa
 import { parseEndpoint } from "./common/doctor.js";
 import { parseKeys } from "./worker-shim.js";
 import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun, parseLinuxDefaultRoute, parseResolvConf, parseResolvectl, firstFreeTun, pfKillSwitchRules, iptablesKillSwitchSetup, iptablesKillSwitchTeardown } from "./common/tun.js";
+import { aptHint } from "./provision/vps.js";
 import { normalizeDomain } from "./provision/vps.js";
 
 const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
@@ -381,6 +382,13 @@ test("kill switch (Linux iptables): dedicated chain hooked into OUTPUT, cleanly 
   const down = iptablesKillSwitchTeardown();
   assert.match(down, /-D OUTPUT -j COLLATERAL_KS/);
   assert.match(down, /-X COLLATERAL_KS/);
+});
+
+test("provision: aptHint gives guided advice for the common Oracle first-boot failures", () => {
+  assert.match(aptHint("E: Could not get lock /var/lib/dpkg/lock-frontend"), /first-boot/);
+  assert.match(aptHint("unified-monitoring-agent needs to be reinstalled, but I can't find an archive"), /wedged/);
+  assert.match(aptHint("Temporary failure resolving 'deb.nodesource.com'"), /mirrors/);
+  assert.equal(aptHint("something unrelated"), "");
 });
 
 test("server: parseKeys builds the allowed set (labels/blank/garbage ignored, deduped)", () => {

@@ -181,6 +181,11 @@ It runs a checklist - your config, DNS, port 443, the TLS cert, SSH to the VM, a
 end-to-end (the live exit IP) - and prints a pass/warn/fail line for each. Exits non-zero if
 anything's broken, so it's scriptable too.
 
+Setting up a brand-new Oracle VM? Setup waits for the instance's first-boot updates to finish and
+auto-repairs a wedged package database (a known Oracle first-boot quirk) before installing, so it
+rarely trips on that. If an install ever does fail, the error tells you exactly what to do - usually
+just wait a moment and press **s** again.
+
 ## Run it headless (servers, scripts)
 
 The subcommands work without the TUI - handy on a Linux box or in a script. With npx (nothing to

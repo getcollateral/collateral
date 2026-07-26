@@ -22,6 +22,18 @@ export function normalizeDomain(s) {
   return String(s || "").trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "").toLowerCase();
 }
 
+// Turn a failed-install log into one line of actionable guidance. Pure -> unit-testable.
+export function aptHint(blob) {
+  const s = String(blob || "");
+  if (/Could not get lock|dpkg frontend lock|lock-frontend|Unable to acquire the dpkg/i.test(s))
+    return " - the VM was still running its first-boot updates; wait ~2 min and run setup again";
+  if (/needs to be reinstalled|reinst-required|--configure -a|dpkg was interrupted/i.test(s))
+    return " - the VM's package system was wedged; setup tried to repair it, so run setup once more (or SSH in and run `sudo dpkg --configure -a`)";
+  if (/Temporary failure resolving|Failed to fetch|Could not resolve|Unable to (locate|fetch)/i.test(s))
+    return " - the VM couldn't reach the package mirrors; check its internet/DNS, then retry";
+  return "";
+}
+
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SSH_OPTS = ["-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15", "-o", "BatchMode=yes"];
 
@@ -61,26 +73,44 @@ function ssh(host, user, keyPath, remoteCmd, input, timeout = 300000, onData) {
 }
 
 // The remote install script (Ubuntu-focused; best-effort on Oracle Linux). Idempotent.
-function setupScript({ uuid, domain }) {
+export function setupScript({ uuid, domain }) {
   return `#!/usr/bin/env bash
 set -eo pipefail
 export DEBIAN_FRONTEND=noninteractive
 have(){ command -v "$1" >/dev/null 2>&1; }
 if ! sudo -n true 2>/dev/null; then echo COLLATERAL_NEED_NOPASSWD_SUDO; exit 1; fi
+# --- Oracle first-boot hardening. A fresh Ubuntu runs cloud-init + unattended-upgrades for a few
+# minutes (holding the dpkg lock), and Oracle's monitoring agent sometimes wedges the package DB
+# ("needs to be reinstalled, but I can't find an archive"), which then poisons every apt command.
+# Make apt wait for the lock, and auto-repair a wedged dpkg, so the installs below don't abort. ---
+if have apt-get; then
+  echo 'DPkg::Lock::Timeout "180";' | sudo tee /etc/apt/apt.conf.d/99collateral-lock >/dev/null
+  if have cloud-init; then echo "waiting for the VM's first-boot setup to finish (up to ~3 min)…"; sudo cloud-init status --wait >/dev/null 2>&1 || true; fi
+  apt_repair(){
+    sudo dpkg --configure -a 2>/dev/null || true
+    for p in $(dpkg -l 2>/dev/null | awk 'substr($0,3,1)=="R"{print $2}'); do   # 3rd status char R = reinst-required
+      echo "clearing a wedged package that was blocking apt: $p"
+      sudo dpkg --purge --force-remove-reinstreq --force-depends "$p" 2>/dev/null || true
+    done
+    sudo apt-get -f install -y 2>/dev/null || true
+  }
+  apt_get(){ sudo apt-get "$@" || { echo "apt hit a snag - repairing dpkg and retrying once…"; apt_repair; sudo apt-get "$@"; }; }
+  apt_repair
+fi
 # Use a SYSTEM node (never a home-dir nvm node - systemd as root can't exec that).
 sysnode(){ for c in /usr/bin/node /usr/local/bin/node; do if [ -x "$c" ] && [ "$("$c" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -ge 18 ]; then echo "$c"; return; fi; done; }
 NODE="$(sysnode)"
 if [ -z "$NODE" ]; then
-  if have apt-get; then curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs
+  if have apt-get; then curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && apt_get install -y nodejs
   elif have dnf; then sudo dnf module reset -y nodejs || true; sudo dnf module install -y nodejs:20/common || sudo dnf install -y nodejs; fi
   NODE="$(sysnode)"; [ -z "$NODE" ] && NODE=/usr/bin/node
 fi
 if ! have caddy; then
   if have apt-get; then
-    sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl gnupg ca-certificates
+    apt_get install -y debian-keyring debian-archive-keyring apt-transport-https curl gnupg ca-certificates
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
-    sudo apt-get update -y && sudo apt-get install -y caddy
+    apt_get update -y && apt_get install -y caddy
   elif have dnf; then
     sudo dnf install -y 'dnf-command(copr)' || true
     sudo dnf copr enable -y @caddy/caddy "epel-$(rpm -E %rhel)-$(uname -m)" 2>/dev/null || sudo dnf copr enable -y @caddy/caddy || true
@@ -228,7 +258,7 @@ export async function provisionVps({ host, user = "ubuntu", keyPath, uuid: keyAr
   } catch (e) {
     const blob = (e.stdout || "") + (e.stderr || "");
     if (/COLLATERAL_NEED_NOPASSWD_SUDO/.test(blob)) throw new Error(`${user}@${host} needs passwordless sudo (ubuntu/opc users have it).`);
-    throw new Error("install failed: " + (e.stderr || e.stdout || e.message || "").trim().split("\n").slice(-3).join(" ").slice(-300));
+    throw new Error("install failed" + aptHint(blob) + ": " + (e.stderr || e.stdout || e.message || "").trim().split("\n").slice(-3).join(" ").slice(-300));
   }
   if (!/COLLATERAL_SETUP_OK/.test(out.stdout)) throw new Error("install didn't complete: " + (out.stderr || out.stdout || "").trim().slice(-300));
   onStep("install", "ok");
