@@ -856,7 +856,13 @@ async function setupVps() {
     });
     state.busy = false;
     state.workerUrl = res.workerUrl; state.uuid = res.uuid;
-    saveConfig({ workerUrl: res.workerUrl, uuid: res.uuid });
+    // freshen a matching saved machine's creds, so switching back to it later still targets it right
+    const savePatch = { workerUrl: res.workerUrl, uuid: res.uuid };
+    if (Array.isArray(state.machines)) {
+      const mm = state.machines.find((m) => m.workerUrl === res.workerUrl);
+      if (mm) { Object.assign(mm, { uuid: res.uuid, vpsHost: state.vpsHost, vpsUser: state.vpsUser, vpsKey: state.vpsKey, vpsDomain: state.vpsDomain }); savePatch.machines = state.machines; }
+    }
+    saveConfig(savePatch);
     state.view = "main";
     setMsg(A.green + `Server ready at ${res.domain}. Connecting…` + A.reset);
     await connect();
