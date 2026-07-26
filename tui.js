@@ -802,11 +802,14 @@ async function machines() {
     lines.push(``);
   }
   const fastHint = list.length >= 2 ? ` · ${A.amber}f${A.reset} fastest` : "";
-  lines.push(`${A.amber}number${A.reset} switch · ${A.amber}s${A.reset} save current${fastHint}${list.length ? ` · ${A.amber}dN${A.reset} delete #N` : ""} · ${A.dim}enter cancels${A.reset}`);
+  lines.push(`${A.amber}number${A.reset} switch · ${A.amber}s${A.reset} save current${fastHint}${list.length ? ` · ${A.amber}dN${A.reset} delete #N` : ""}`);
+  lines.push(`${A.amber}e${A.reset} export backup · ${A.amber}i${A.reset} import backup · ${A.dim}enter cancels${A.reset}`);
   const ans = (await promptStart(lines, "")).trim().toLowerCase();
   if (!ans) return setMsg("Cancelled.");
   if (ans === "s") return saveMachine();
   if (ans === "f") return connectFastest();
+  if (ans === "e") return exportConfig();
+  if (ans === "i") return importConfig();
   const del = /^d\s*0*(\d+)$/.exec(ans);
   if (del) return deleteMachine(Number(del[1]) - 1);
   const n = Number(ans);
@@ -816,7 +819,7 @@ async function machines() {
     saveConfig({ workerUrl: state.workerUrl, uuid: state.uuid });
     return setMsg(A.green + `Switched to ${m.desc || "that machine"}.` + A.reset + ` ${A.dim}Press c to connect.${A.reset}`);
   }
-  return setMsg(A.red + "Didn't recognize that - type a number, s, or dN." + A.reset);
+  return setMsg(A.red + "Didn't recognize that - type a number, or s / f / e / i / dN." + A.reset);
 }
 
 async function saveMachine() {
@@ -836,6 +839,44 @@ async function saveMachine() {
 export function pickFastest(results) {
   const reachable = (results || []).filter((r) => r && r.ms != null).sort((a, b) => a.ms - b.ms);
   return reachable[0] || null;
+}
+
+// Merge two lists, skipping items whose key already exists. Pure -> unit-testable. Folds an
+// imported backup's saved machines / friends into the current ones without creating duplicates.
+export function mergeBy(current, incoming, keyFn) {
+  const out = Array.isArray(current) ? current.slice() : [];
+  const seen = new Set(out.map(keyFn));
+  let added = 0;
+  for (const x of (incoming || [])) {
+    if (!x) continue;
+    const k = keyFn(x);
+    if (!seen.has(k)) { out.push(x); seen.add(k); added++; }
+  }
+  return { list: out, added };
+}
+
+// Build the backup payload from a config: captures the active server as a machine too, so it's
+// always restorable even if it was never explicitly saved. Pure (timestamp passed in).
+export function buildBackup(cfg, nowIso) {
+  const machines = Array.isArray(cfg.machines) ? cfg.machines.slice() : [];
+  if (isWsUrl(cfg.workerUrl) && isUuid(cfg.uuid) && !machines.some((m) => m.workerUrl === cfg.workerUrl && m.uuid === cfg.uuid)) {
+    machines.push({ desc: "current server", workerUrl: cfg.workerUrl, uuid: cfg.uuid });
+  }
+  return { _collateral: "backup", version: 1, exportedAt: nowIso, config: { ...cfg, machines } };
+}
+
+// Plan how an imported config folds into the current one: merge machines + friends (no dupes), and
+// adopt the backup's server/key + VPS settings only where this machine has none. Pure.
+export function planImport(cur, imp) {
+  const m = mergeBy(cur.machines, imp.machines, (x) => `${x.workerUrl}|${x.uuid}`);
+  const fr = mergeBy(cur.friends, imp.friends, (x) => x.uuid);
+  const patch = { machines: m.list, friends: fr.list };
+  if (!isWsUrl(cur.workerUrl) || !isUuid(cur.uuid)) {
+    if (isWsUrl(imp.workerUrl)) patch.workerUrl = imp.workerUrl;
+    if (isUuid(imp.uuid)) patch.uuid = imp.uuid;
+  }
+  for (const f of ["vpsHost", "vpsUser", "vpsKey", "vpsDomain"]) if (!cur[f] && imp[f] != null) patch[f] = imp[f];
+  return { patch, addedMachines: m.added, addedFriends: fr.added };
 }
 
 // Ping every saved machine and connect to the lowest-latency one. Reuses the same TCP probe that
@@ -863,6 +904,36 @@ function deleteMachine(i) {
   const [removed] = list.splice(i, 1);
   state.machines = list; saveConfig({ machines: list });
   return setMsg(`Deleted "${removed.desc || "machine"}".`);
+}
+
+// Back up your whole setup (saved machines, friends, current server/key, VPS settings) to a file -
+// a backup, or a way to move everything to another computer. Restored by importConfig().
+async function exportConfig() {
+  const def = path.join(os.homedir(), "collateral-backup.json");
+  const dest = expandKey((await promptLine("Save backup to", def)).trim() || def);
+  const payload = buildBackup(loadConfig(), new Date().toISOString());
+  const count = payload.config.machines.length;
+  try { fs.writeFileSync(dest, JSON.stringify(payload, null, 2)); }
+  catch (e) { return setMsg(A.red + `Couldn't write ${dest}: ${e.message || e}` + A.reset); }
+  return setMsg(A.green + `Backed up ${count} machine${count === 1 ? "" : "s"} to ${dest}.` + A.reset + ` ${A.dim}(contains your keys - keep it private)${A.reset}`);
+}
+
+// Restore a backup: merge its saved machines + friends into yours (no duplicates), and adopt its
+// server/key + VPS settings if this machine has none set yet (a fresh computer).
+async function importConfig() {
+  const src = expandKey((await promptLine("Restore from backup file", path.join(os.homedir(), "collateral-backup.json"))).trim());
+  if (!src) return setMsg("Cancelled.");
+  let payload;
+  try { payload = JSON.parse(fs.readFileSync(src, "utf8")); }
+  catch (e) { return setMsg(A.red + `Couldn't read ${src}: ${e.message || e}` + A.reset); }
+  const imp = payload && payload.config ? payload.config : payload; // accept our wrapper or a bare config file
+  if (!imp || typeof imp !== "object" || (!Array.isArray(imp.machines) && !isWsUrl(imp.workerUrl))) {
+    return setMsg(A.red + "That file isn't a Collateral backup." + A.reset);
+  }
+  const { patch, addedMachines, addedFriends } = planImport(state, imp);
+  Object.assign(state, patch);
+  saveConfig(patch);
+  return setMsg(A.green + `Imported +${addedMachines} machine${addedMachines === 1 ? "" : "s"}${addedFriends ? `, +${addedFriends} friend${addedFriends === 1 ? "" : "s"}` : ""}.` + A.reset + ` ${A.dim}Press m to pick one, then c to connect.${A.reset}`);
 }
 
 // One place to set the connection: paste a link (which carries both endpoint + key), scan a QR, or

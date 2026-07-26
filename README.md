@@ -63,13 +63,15 @@ working.
 |---|---|
 | **s** | First-time setup - provisions your server |
 | **c** | Connect / disconnect |
+| **e** | Connection details - set server / key, or paste a `vless://` link |
 | **t** | Test the connection (shows the live exit IP) |
-| **d** | System-wide proxy on/off (macOS) |
-| **f** | Full tunnel on/off - captures the whole device (macOS & Linux) |
+| **g** | Generate a new access key |
 | **x** | Share this config as a QR code |
 | **i** | Import a config by scanning a QR (macOS camera) |
-| **w** / **u** | Set the server address / access key manually |
-| **g** | Generate a new access key |
+| **d** | System-wide proxy on/off (macOS) |
+| **f** | Full tunnel on/off - captures the whole device (macOS & Linux) |
+| **m** | Saved machines - switch, auto-pick fastest, back up / restore |
+| **k** | Share with friends - add / revoke keys |
 | **p** | Proxy setup help |
 | **q** | Quit (works even mid-connect) |
 
@@ -126,6 +128,11 @@ The same QR also imports into mobile VLESS apps (v2rayNG, sing-box, Shadowrocket
 your phone on it too.
 
 > **Anyone with your config can use your server.** Only share the QR with people you want on it.
+
+To move (or back up) your **whole** setup at once - every saved machine, your friends list, current
+server/key, and VPS settings - open saved machines (**m**) and press **e** to write it all to a JSON
+file, then **i** on the other computer to import and merge it (nothing gets overwritten). The file
+contains your keys, so keep it private.
 
 ---
 

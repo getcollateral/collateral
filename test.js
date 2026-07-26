@@ -15,7 +15,7 @@ import { parseSocksUdp } from "./client.js";
 import { qrMatrix } from "./common/qr.js";
 import { vlessUriFromConfig, parseVlessUri } from "./common/config.js";
 import { FrameParser, encodeFrame, OPCODES } from "./common/ws-frame.js";
-import { renderFrame, hitTest, fmtBytes, latLevel, pickFastest } from "./tui.js";
+import { renderFrame, hitTest, fmtBytes, latLevel, pickFastest, mergeBy, buildBackup, planImport } from "./tui.js";
 import { parseEndpoint } from "./common/doctor.js";
 import { parseKeys } from "./worker-shim.js";
 import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun, parseLinuxDefaultRoute, parseResolvConf, parseResolvectl, firstFreeTun, pfKillSwitchRules, iptablesKillSwitchSetup, iptablesKillSwitchTeardown } from "./common/tun.js";
@@ -181,6 +181,35 @@ test("TUI: fmtBytes scales units and rounds sensibly", () => {
   assert.equal(fmtBytes(1024 * 1024), "1.0 MB");
   assert.equal(fmtBytes(20 * 1024 * 1024), "20 MB");   // >= 10 drops the decimal
   assert.equal(fmtBytes(undefined), "0 B");            // no traffic yet
+});
+
+test("TUI: mergeBy folds in new items and skips existing keys (backup import)", () => {
+  const cur = [{ workerUrl: "wss://a", uuid: "1" }, { workerUrl: "wss://b", uuid: "2" }];
+  const inc = [{ workerUrl: "wss://b", uuid: "2" }, { workerUrl: "wss://c", uuid: "3" }, null];
+  const r = mergeBy(cur, inc, (x) => `${x.workerUrl}|${x.uuid}`);
+  assert.equal(r.added, 1);                 // only wss://c is new (b already present, null skipped)
+  assert.equal(r.list.length, 3);
+  assert.equal(r.list[2].workerUrl, "wss://c");
+  assert.deepEqual(mergeBy(undefined, [{ uuid: "x" }], (x) => x.uuid), { list: [{ uuid: "x" }], added: 1 });
+});
+
+test("TUI: backup round-trip - export captures the active server, import merges onto a fresh box", () => {
+  const cfg = { workerUrl: "wss://home/x", uuid: "3d9a7f2e-1c84-4b6d-a05f-8e21c9b4d7f0", machines: [{ desc: "vm", workerUrl: "wss://vm/y", uuid: "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d" }], friends: [{ label: "sam", uuid: "ffffffff-ffff-ffff-ffff-ffffffffffff" }] };
+  const backup = buildBackup(cfg, "2026-01-01T00:00:00Z");
+  assert.equal(backup._collateral, "backup");
+  assert.equal(backup.config.machines.length, 2);                         // the vm + the active server, captured
+  assert.ok(backup.config.machines.some((m) => m.workerUrl === "wss://home/x"));
+  // fresh machine (no server set): import merges everything and adopts the active server/key
+  const fresh = { machines: [], friends: [], workerUrl: "", uuid: "" };
+  const r = planImport(fresh, backup.config);
+  assert.equal(r.addedMachines, 2);
+  assert.equal(r.addedFriends, 1);
+  assert.equal(r.patch.workerUrl, "wss://home/x");                        // adopted (was unset)
+  // already-configured machine: don't hijack the active server, still merge new machines
+  const configured = { machines: [], friends: [], workerUrl: "wss://mine/z", uuid: "0a0a0a0a-0a0a-0a0a-0a0a-0a0a0a0a0a0a" };
+  const r2 = planImport(configured, backup.config);
+  assert.equal(r2.patch.workerUrl, undefined);                           // left alone
+  assert.equal(r2.addedMachines, 2);
 });
 
 test("TUI: pickFastest returns the lowest-latency reachable machine", () => {
