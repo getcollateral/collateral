@@ -1053,7 +1053,7 @@ async function details() {
     ...(scanSupported() ? [`${A.amber}s${A.reset} scan a QR with the camera`] : []),
     ``,
     `${A.amber}a${A.reset} auto-connect on launch: ${state.autoConnect ? A.green + "on" + A.reset : A.muted + "off" + A.reset}`,
-    `${A.amber}d${A.reset} tunnel DNS (full tunnel only): ${state.dnsTunnel ? A.green + "on" + A.reset : A.muted + "off" + A.reset}`,
+    ...(process.platform === "linux" ? [`${A.amber}d${A.reset} tunnel DNS (full tunnel, Linux): ${state.dnsTunnel ? A.green + "on" + A.reset : A.muted + "off" + A.reset}`] : []),
     ``,
     `${A.dim}enter to go back${A.reset}`,
   ];
@@ -1063,7 +1063,7 @@ async function details() {
   if (ans === "u") return setKey();
   if (ans === "s" && scanSupported()) return importFromCamera();
   if (ans === "a") { state.autoConnect = !state.autoConnect; saveConfig({ autoConnect: state.autoConnect }); return setMsg(state.autoConnect ? A.green + "Auto-connect on launch is ON." + A.reset : "Auto-connect on launch is off."); }
-  if (ans === "d") { state.dnsTunnel = !state.dnsTunnel; saveConfig({ dnsTunnel: state.dnsTunnel }); return setMsg(state.dnsTunnel ? A.green + "DNS will tunnel through the full tunnel (no plaintext DNS leak)." + A.reset : "DNS tunnelling off."); }
+  if (ans === "d" && process.platform === "linux") { state.dnsTunnel = !state.dnsTunnel; saveConfig({ dnsTunnel: state.dnsTunnel }); return setMsg(state.dnsTunnel ? A.green + "DNS will tunnel through the full tunnel (no plaintext DNS leak)." + A.reset : "DNS tunnelling off."); }
   return draw(); // enter / anything else -> back to main
 }
 
