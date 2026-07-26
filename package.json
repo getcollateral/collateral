@@ -7,6 +7,15 @@
     "getcollateral": "tui.js",
     "collateral": "tui.js"
   },
+  "files": [
+    "tui.js",
+    "client.js",
+    "worker-shim.js",
+    "ui-server.js",
+    "common/",
+    "provision/",
+    "mac/"
+  ],
   "engines": {
     "node": ">=22"
   },

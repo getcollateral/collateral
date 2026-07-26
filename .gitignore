@@ -19,3 +19,6 @@ fizzytoken.txt
 
 # raw screenshots (the committed one is assets/tui.png)
 CleanShot*.png
+
+# npm pack output
+*.tgz
