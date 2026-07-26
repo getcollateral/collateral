@@ -121,11 +121,13 @@ export function startClient({ socksPort = 1080, host = "127.0.0.1", workerUrl, u
         const addonLen = buf[1];
         buf = buf.subarray(2 + addonLen);
         respParsed = true;
+        server.authRejected = false; // got a VLESS response -> the key is accepted
       }
       if (buf.length) sock.write(buf);
     };
     ws.onclose = (ev) => {
       const code = ev && ev.code;
+      if (code === 1008) server.authRejected = true; // 1008 = server rejected the key (wrong or revoked)
       if (!quiet && code && code !== 1000) {
         let hint = "";
         if (code === 1008) hint = ", UUID rejected: the client USER_UUID must equal the server's USER_UUID";

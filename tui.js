@@ -410,10 +410,13 @@ async function connect() {
     startHealthMonitor();
     setMsg(A.green + `Connected, traffic exits via ${ip}.` + A.reset);
   } catch (e) {
+    const revoked = !!(socks && socks.authRejected);
     if (socks) { try { socks.close(); } catch {} }
     socks = null; state.socksPort = null; state.connected = false; state.exitIP = null;
     state.busy = false;
-    setMsg(A.red + `Couldn't establish the tunnel: ${e.message || e}. Check the server is set up and the key matches.` + A.reset);
+    setMsg(A.red + (revoked
+      ? "Access key rejected - it was revoked, or doesn't match this server. Get a fresh link (press e, then l)."
+      : `Couldn't establish the tunnel: ${e.message || e}. Check the server is set up and the key matches.`) + A.reset);
   }
 }
 
@@ -463,6 +466,10 @@ async function healthTick() {
     if (state.reconnecting) { state.reconnecting = false; setMsg(A.green + `Tunnel recovered, exits via ${ip}.` + A.reset); }
     scheduleHealth(HEALTH_OK_MS);
   } catch {
+    if (socks && socks.authRejected) { // the owner revoked this key mid-session - reconnecting won't help
+      state.reconnecting = false;
+      return setMsg(A.red + "Access revoked - your key no longer works on this server. Press c to disconnect." + A.reset);
+    }
     healthFails++;
     if (healthFails >= 2 && !state.reconnecting) { state.reconnecting = true; setMsg(A.amber + "Tunnel unreachable, reconnecting automatically…" + A.reset); }
     scheduleHealth(healthFails >= 2 ? Math.min(8000, HEALTH_OK_MS) : Math.min(4000, HEALTH_OK_MS));

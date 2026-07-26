@@ -87,11 +87,12 @@ function handleSession(socket, head, isAllowed, quiet) {
   let closed = false;
   let idleTimer = null;
 
-  const closeAll = () => {
+  const closeAll = (code) => {
     if (closed) return;
     closed = true;
     if (idleTimer) clearTimeout(idleTimer);
-    try { socket.write(encodeFrame(OPCODES.CLOSE, Buffer.alloc(0))); } catch {}
+    const payload = code ? Buffer.from([(code >> 8) & 0xff, code & 0xff]) : Buffer.alloc(0);
+    try { socket.write(encodeFrame(OPCODES.CLOSE, payload)); } catch {}
     try { socket.destroy(); } catch {}
     if (upstream) try { upstream.destroy(); } catch {}
     if (udp) try { udp.sock.close(); } catch {}
@@ -114,7 +115,7 @@ function handleSession(socket, head, isAllowed, quiet) {
         } catch {
           return closeAll();
         }
-        if (!isAllowed(hdr.uuid)) return closeAll(); // key not in the allowed set -> drop
+        if (!isAllowed(hdr.uuid)) return closeAll(1008); // 1008 (policy violation) = "key rejected/revoked"
 
         if (hdr.command === 1) {
           mode = "tcp";
