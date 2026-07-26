@@ -545,23 +545,27 @@ function statsTick() {
   }
   if (state.view === "main" && !inPrompt && !state.busy) draw(); // main view has nothing to scroll
 }
-// TCP round-trip to the server as a lightweight latency probe (no tunnel overhead).
-function pingServer() {
-  let host, port;
-  try {
-    const u = new URL(state.workerUrl);
-    host = u.hostname;
-    port = Number(u.port) || (u.protocol === "wss:" ? 443 : 80);
-  } catch { state.latency = null; return; }
-  const t0 = Date.now();
-  const s = net.connect({ host, port });
-  let done = false;
-  const finish = (val) => { if (done) return; done = true; state.latency = val; try { s.destroy(); } catch {} };
-  s.setTimeout(3000);
-  s.once("connect", () => finish(Date.now() - t0));
-  s.once("timeout", () => finish(null));
-  s.once("error", () => finish(null));
+// TCP round-trip to a server URL, resolving latency in ms (or null if unreachable). No tunnel
+// overhead - just how far away the endpoint is. Feeds both the live ping row and fastest-pick.
+export function pingUrl(workerUrl, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    let host, port;
+    try {
+      const u = new URL(workerUrl);
+      host = u.hostname;
+      port = Number(u.port) || (u.protocol === "wss:" ? 443 : 80);
+    } catch { return resolve(null); }
+    const t0 = Date.now();
+    const s = net.connect({ host, port });
+    let done = false;
+    const finish = (val) => { if (done) return; done = true; try { s.destroy(); } catch {} resolve(val); };
+    s.setTimeout(timeoutMs);
+    s.once("connect", () => finish(Date.now() - t0));
+    s.once("timeout", () => finish(null));
+    s.once("error", () => finish(null));
+  });
 }
+function pingServer() { pingUrl(state.workerUrl).then((ms) => { state.latency = ms; }); }
 
 // Full-tunnel (TUN): true device-wide capture of all TCP via a utun, using our existing tunnel.
 // Mutually exclusive with the system SOCKS proxy. Needs admin (one GUI prompt) and macOS.
@@ -785,10 +789,12 @@ async function machines() {
     });
     lines.push(``);
   }
-  lines.push(`${A.amber}number${A.reset} switch · ${A.amber}s${A.reset} save current${list.length ? ` · ${A.amber}dN${A.reset} delete #N` : ""} · ${A.dim}enter cancels${A.reset}`);
+  const fastHint = list.length >= 2 ? ` · ${A.amber}f${A.reset} fastest` : "";
+  lines.push(`${A.amber}number${A.reset} switch · ${A.amber}s${A.reset} save current${fastHint}${list.length ? ` · ${A.amber}dN${A.reset} delete #N` : ""} · ${A.dim}enter cancels${A.reset}`);
   const ans = (await promptStart(lines, "")).trim().toLowerCase();
   if (!ans) return setMsg("Cancelled.");
   if (ans === "s") return saveMachine();
+  if (ans === "f") return connectFastest();
   const del = /^d\s*0*(\d+)$/.exec(ans);
   if (del) return deleteMachine(Number(del[1]) - 1);
   const n = Number(ans);
@@ -812,6 +818,31 @@ async function saveMachine() {
   if (idx >= 0) list[idx] = entry; else list.push(entry);          // update in place if already saved
   state.machines = list; saveConfig({ machines: list });
   return setMsg(A.green + `Saved "${entry.desc}".` + A.reset);
+}
+
+// Pure: from [{m, ms}] (ms null = unreachable) pick the reachable entry with the lowest latency.
+export function pickFastest(results) {
+  const reachable = (results || []).filter((r) => r && r.ms != null).sort((a, b) => a.ms - b.ms);
+  return reachable[0] || null;
+}
+
+// Ping every saved machine and connect to the lowest-latency one. Reuses the same TCP probe that
+// feeds the live ping row; the closest / least-loaded endpoint usually wins.
+async function connectFastest() {
+  const list = Array.isArray(state.machines) ? state.machines : [];
+  const targets = list.filter((m) => isWsUrl(m.workerUrl) && isUuid(m.uuid));
+  if (targets.length < 2) return setMsg(A.red + "Save at least two machines first (press s here) to compare them." + A.reset);
+  state.busy = true; state.busyText = `pinging ${targets.length} servers…`; draw();
+  const results = await Promise.all(targets.map(async (m) => ({ m, ms: await pingUrl(m.workerUrl) })));
+  state.busy = false;
+  const best = pickFastest(results);
+  if (!best) { draw(); return setMsg(A.red + "None of your saved servers responded - check they're set up." + A.reset); }
+  state.workerUrl = best.m.workerUrl; state.uuid = best.m.uuid;
+  saveConfig({ workerUrl: state.workerUrl, uuid: state.uuid });
+  const rest = results.filter((r) => r.ms != null && r !== best).sort((a, b) => a.ms - b.ms)
+    .map((r) => `${r.m.desc} ${r.ms}ms`).join(", ");
+  setMsg(A.green + `Fastest: ${best.m.desc} at ${best.ms} ms.` + A.reset + (rest ? ` ${A.dim}(${rest})${A.reset}` : "") + ` ${A.dim}Connecting…${A.reset}`);
+  return connect();
 }
 
 function deleteMachine(i) {

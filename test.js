@@ -15,7 +15,7 @@ import { parseSocksUdp } from "./client.js";
 import { qrMatrix } from "./common/qr.js";
 import { vlessUriFromConfig, parseVlessUri } from "./common/config.js";
 import { FrameParser, encodeFrame, OPCODES } from "./common/ws-frame.js";
-import { renderFrame, hitTest, fmtBytes, latLevel } from "./tui.js";
+import { renderFrame, hitTest, fmtBytes, latLevel, pickFastest } from "./tui.js";
 import { parseEndpoint } from "./common/doctor.js";
 import { parseKeys } from "./worker-shim.js";
 import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun, parseLinuxDefaultRoute, parseResolvConf, parseResolvectl, firstFreeTun } from "./common/tun.js";
@@ -181,6 +181,15 @@ test("TUI: fmtBytes scales units and rounds sensibly", () => {
   assert.equal(fmtBytes(1024 * 1024), "1.0 MB");
   assert.equal(fmtBytes(20 * 1024 * 1024), "20 MB");   // >= 10 drops the decimal
   assert.equal(fmtBytes(undefined), "0 B");            // no traffic yet
+});
+
+test("TUI: pickFastest returns the lowest-latency reachable machine", () => {
+  const a = { m: { desc: "a" }, ms: 80 };
+  const b = { m: { desc: "b" }, ms: 20 };
+  const c = { m: { desc: "c" }, ms: null };   // unreachable
+  assert.equal(pickFastest([a, b, c]), b);    // lowest ms wins
+  assert.equal(pickFastest([c]), null);       // none reachable
+  assert.equal(pickFastest([]), null);
 });
 
 test("TUI: latLevel maps latency to signal-bar levels (null = none)", () => {
