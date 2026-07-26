@@ -163,17 +163,19 @@ echo "== dns ${domain} =="; getent hosts ${domain} 2>&1 || echo "getent failed"`
 
 const KEYS_PATH = "/opt/collateral/keys";
 const okUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s || "");
+// Nudge the server to re-read the keys file right away (fs.watch is best-effort on some kernels).
+const RELOAD = "(sudo systemctl kill -s HUP collateral 2>/dev/null || sudo pkill -HUP -f /opt/collateral/server.mjs 2>/dev/null) || true";
 
 // Friend keys: the VM's keys file is the source of truth, and the server re-reads it on change
 // (fs.watch), so add/revoke take effect immediately - no redeploy. UUIDs are validated before they
 // reach the shell, so there's nothing to inject.
 export async function addKey({ host, user = "ubuntu", keyPath, uuid }) {
   if (!okUuid(uuid)) throw new Error("addKey: bad uuid");
-  await ssh(host, user, keyPath, `sudo touch ${KEYS_PATH}; sudo grep -qxF '${uuid}' ${KEYS_PATH} || echo '${uuid}' | sudo tee -a ${KEYS_PATH} >/dev/null`, null, 30000);
+  await ssh(host, user, keyPath, `sudo touch ${KEYS_PATH}; sudo grep -qxF '${uuid}' ${KEYS_PATH} || echo '${uuid}' | sudo tee -a ${KEYS_PATH} >/dev/null; ${RELOAD}`, null, 30000);
 }
 export async function removeKey({ host, user = "ubuntu", keyPath, uuid }) {
   if (!okUuid(uuid)) throw new Error("removeKey: bad uuid");
-  await ssh(host, user, keyPath, `sudo sh -c 'grep -vxF "${uuid}" ${KEYS_PATH} > ${KEYS_PATH}.tmp 2>/dev/null; mv ${KEYS_PATH}.tmp ${KEYS_PATH}; chmod 600 ${KEYS_PATH}'`, null, 30000);
+  await ssh(host, user, keyPath, `sudo sh -c 'grep -vxF "${uuid}" ${KEYS_PATH} > ${KEYS_PATH}.tmp 2>/dev/null; mv ${KEYS_PATH}.tmp ${KEYS_PATH}; chmod 600 ${KEYS_PATH}'; ${RELOAD}`, null, 30000);
 }
 export async function listKeys({ host, user = "ubuntu", keyPath }) {
   const { stdout } = await ssh(host, user, keyPath, `sudo cat ${KEYS_PATH} 2>/dev/null || true`, null, 30000);

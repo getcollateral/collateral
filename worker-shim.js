@@ -43,7 +43,10 @@ export function startWorker({ port = 8787, host = "127.0.0.1", uuid, uuids, keys
   };
   loadKeys();
   if (!allowed.size) throw new Error("startWorker: at least one key (uuid / uuids / keysFile) is required");
-  if (keysFile) { try { fs.watch(keysFile, { persistent: false }, () => loadKeys()); } catch {} }
+  if (keysFile) {
+    try { fs.watch(keysFile, { persistent: false }, () => loadKeys()); } catch {}
+    process.on("SIGHUP", loadKeys); // explicit reload signal - belt-and-suspenders with the file watch
+  }
   const isAllowed = (u) => allowed.has(hexOf(u));
 
   const server = http.createServer((req, res) => {
