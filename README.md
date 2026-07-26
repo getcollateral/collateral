@@ -120,6 +120,19 @@ your phone on it too.
 
 ---
 
+## Share with friends (`k`)
+
+Let other people use your server without handing over your own key. Press **k**:
+
+- **a** — add a friend: give them a name, and Collateral generates a fresh key, adds it to your
+  VM over SSH, and shows a QR/link to send them. Their key works immediately (the server reloads
+  the key list live — no redeploy).
+- **rN** — revoke friend #N: removes their key from the VM, cutting them off instantly.
+
+Everyone shares one server but holds their own key, so you can revoke a single person without
+disrupting anyone else. (If you set your server up before this feature, re-run setup (`s`) once so
+it has the reloadable key file.)
+
 ## Use your own domain (optional, stronger)
 
 During setup you can enter a domain **you own** with an A record already pointed at your VM.

@@ -40,7 +40,7 @@ export function bundleServer() {
     bodies.push(src.trim());
   }
   // Dedicated server file → start unconditionally, bound to localhost (Caddy fronts it).
-  const start = `\nstartWorker({ port: Number(process.env.WORKER_PORT || 8787), host: "127.0.0.1", uuid: process.env.USER_UUID });\n`;
+  const start = `\nstartWorker({ port: Number(process.env.WORKER_PORT || 8787), host: "127.0.0.1", keysFile: process.env.KEYS_FILE, uuid: process.env.USER_UUID });\n`;
   return [...nodeImports].join("\n") + "\n\n" + bodies.join("\n\n") + "\n" + start;
 }
 
@@ -89,7 +89,11 @@ if ! have caddy; then
 fi
 sudo mkdir -p /opt/collateral
 [ -f /tmp/collateral-server.mjs ] && sudo cp /tmp/collateral-server.mjs /opt/collateral/server.mjs
-printf 'USER_UUID=%s\\nWORKER_PORT=8787\\n' '${uuid}' | sudo tee /opt/collateral/env >/dev/null
+# keys file: the server watches this. Ensure the owner's key is present WITHOUT clobbering any
+# friend keys added since - a redeploy must never wipe them.
+sudo touch /opt/collateral/keys && sudo chmod 600 /opt/collateral/keys
+sudo grep -qxF '${uuid}' /opt/collateral/keys || echo '${uuid}' | sudo tee -a /opt/collateral/keys >/dev/null
+printf 'KEYS_FILE=/opt/collateral/keys\\nUSER_UUID=%s\\nWORKER_PORT=8787\\n' '${uuid}' | sudo tee /opt/collateral/env >/dev/null
 sudo chmod 600 /opt/collateral/env
 sudo tee /etc/systemd/system/collateral.service >/dev/null <<UNIT
 [Unit]
@@ -155,6 +159,25 @@ echo "== iptables INPUT =="; sudo iptables -S INPUT 2>/dev/null | head -8
 echo "== dns ${domain} =="; getent hosts ${domain} 2>&1 || echo "getent failed"`;
   try { const { stdout } = await ssh(host, user, keyPath, "bash -s", cmd, 60000); return stdout; }
   catch (e) { return (e.stdout || "") + (e.stderr || "") + (e.message || ""); }
+}
+
+const KEYS_PATH = "/opt/collateral/keys";
+const okUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s || "");
+
+// Friend keys: the VM's keys file is the source of truth, and the server re-reads it on change
+// (fs.watch), so add/revoke take effect immediately - no redeploy. UUIDs are validated before they
+// reach the shell, so there's nothing to inject.
+export async function addKey({ host, user = "ubuntu", keyPath, uuid }) {
+  if (!okUuid(uuid)) throw new Error("addKey: bad uuid");
+  await ssh(host, user, keyPath, `sudo touch ${KEYS_PATH}; sudo grep -qxF '${uuid}' ${KEYS_PATH} || echo '${uuid}' | sudo tee -a ${KEYS_PATH} >/dev/null`, null, 30000);
+}
+export async function removeKey({ host, user = "ubuntu", keyPath, uuid }) {
+  if (!okUuid(uuid)) throw new Error("removeKey: bad uuid");
+  await ssh(host, user, keyPath, `sudo sh -c 'grep -vxF "${uuid}" ${KEYS_PATH} > ${KEYS_PATH}.tmp 2>/dev/null; mv ${KEYS_PATH}.tmp ${KEYS_PATH}; chmod 600 ${KEYS_PATH}'`, null, 30000);
+}
+export async function listKeys({ host, user = "ubuntu", keyPath }) {
+  const { stdout } = await ssh(host, user, keyPath, `sudo cat ${KEYS_PATH} 2>/dev/null || true`, null, 30000);
+  return stdout.split("\n").map((s) => s.trim().toLowerCase()).filter(okUuid);
 }
 
 // Provision the VM and return the client endpoint. onStep(name, status, note) drives the UI.

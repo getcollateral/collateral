@@ -5,7 +5,7 @@
 //   node tui.js        (or: npm run tui)
 //
 // Controls: c connect/disconnect · t test · w set server · u set key · g generate
-//           m saved machines · p proxy help · q quit
+//           m saved machines · k friends · p proxy help · q quit
 
 import readline from "node:readline";
 import crypto from "node:crypto";
@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { startClient } from "./client.js";
 import { getExitIP } from "./common/probe.js";
 import { loadConfig, saveConfig } from "./common/store.js";
-import { provisionVps } from "./provision/vps.js";
+import { provisionVps, addKey, removeKey } from "./provision/vps.js";
 import { setSocks, socksEnabled, primaryService, supported as sysproxySupported } from "./common/sysproxy.js";
 import * as tun from "./common/tun.js";
 import { qrToTerminal } from "./common/qr.js";
@@ -227,8 +227,8 @@ function buildBox(s) {
     [["u", "set access key"], ["g", "generate new key"]],
     [["d", `system proxy: ${dw}`], ["f", `full tunnel: ${tw}`]],
     [["x", "share config (QR)"], ["i", "import (scan QR)"]],
-    [["m", "saved machines"], ["p", "proxy setup help"]],
-    [["q", "quit"]],
+    [["m", "saved machines"], ["k", "friends"]],
+    [["p", "proxy setup help"], ["q", "quit"]],
   ];
   for (const [l, r] of menu) {
     const i = body.length;
@@ -706,6 +706,64 @@ function deleteMachine(i) {
   return setMsg(`Deleted "${removed.desc || "machine"}".`);
 }
 
+const expandKey = (p) => String(p || "").replace(/^~(?=$|\/)/, os.homedir());
+
+// Friends: let other people use YOUR server. Each friend gets their own key, appended to the VM's
+// keys file over SSH (the server picks it up live, no redeploy). Revoking removes their line. Their
+// labels live in your local config; the VM's keys file is the source of truth.
+async function friends() {
+  if (!isWsUrl(state.workerUrl)) return setMsg(A.red + "Set up your server first (press s)." + A.reset);
+  if (!state.vpsHost) return setMsg(A.red + "Managing friends needs your VM's SSH details from setup (press s)." + A.reset);
+  const list = Array.isArray(state.friends) ? state.friends : [];
+  const lines = [`${A.amber}${A.bold}Friends${A.reset} ${A.dim}(people who can use your server)${A.reset}`, ``];
+  if (!list.length) lines.push(`${A.dim}(none yet)${A.reset}`, ``);
+  else {
+    list.forEach((f, i) => lines.push(`  ${A.amber}${i + 1}${A.reset}  ${A.bold}${f.label || "(friend)"}${A.reset}  ${A.dim}${ellip(f.uuid || "", 20)}${A.reset}`));
+    lines.push(``);
+  }
+  lines.push(`${A.amber}a${A.reset} add a friend${list.length ? ` · ${A.amber}rN${A.reset} revoke #N` : ""} · ${A.dim}enter cancels${A.reset}`);
+  const ans = (await promptStart(lines, "")).trim().toLowerCase();
+  if (!ans) return setMsg("Cancelled.");
+  if (ans === "a") return addFriend();
+  const rev = /^r\s*0*(\d+)$/.exec(ans);
+  if (rev) return revokeFriend(Number(rev[1]) - 1);
+  return setMsg(A.red + "Didn't recognize that - type a, or rN." + A.reset);
+}
+
+async function addFriend() {
+  const label = (await promptLine("Friend's name (e.g. alice)", "")).trim();
+  const uuid = crypto.randomUUID();
+  state.busy = true; state.busyText = "adding their key to your server…"; draw();
+  try {
+    await addKey({ host: state.vpsHost, user: state.vpsUser || "ubuntu", keyPath: expandKey(state.vpsKey), uuid });
+    const list = [...(Array.isArray(state.friends) ? state.friends : []), { label: label || "(friend)", uuid }];
+    state.friends = list; saveConfig({ friends: list });
+    state.busy = false;
+    state.shareUri = vlessUriFromConfig({ workerUrl: state.workerUrl, uuid }); // hand the friend THEIR config
+    state.view = "share"; draw();
+    setMsg(A.green + `Added ${label || "friend"}. Send them this QR / link (any key to go back).` + A.reset);
+  } catch (e) {
+    state.busy = false;
+    setMsg(A.red + `Couldn't add friend: ${String(e.message || e).split("\n").pop()}` + A.reset);
+  }
+}
+
+async function revokeFriend(i) {
+  const list = Array.isArray(state.friends) ? state.friends.slice() : [];
+  if (!Number.isInteger(i) || i < 0 || i >= list.length) return setMsg(A.red + "No friend with that number." + A.reset);
+  const f = list[i];
+  state.busy = true; state.busyText = "revoking on your server…"; draw();
+  try {
+    await removeKey({ host: state.vpsHost, user: state.vpsUser || "ubuntu", keyPath: expandKey(state.vpsKey), uuid: f.uuid });
+    list.splice(i, 1); state.friends = list; saveConfig({ friends: list });
+    state.busy = false;
+    setMsg(A.green + `Revoked ${f.label || "friend"} - their key no longer works.` + A.reset);
+  } catch (e) {
+    state.busy = false;
+    setMsg(A.red + `Couldn't revoke: ${String(e.message || e).split("\n").pop()}` + A.reset);
+  }
+}
+
 async function handleKey(k) {
   switch (k) {
     case "q": return quit();
@@ -718,6 +776,7 @@ async function handleKey(k) {
     case "t": return test();
     case "g": return regenKey();
     case "m": return machines();
+    case "k": return friends();
     case "p": state.view = "help"; return draw();
     case "w": {
       const v = await promptLine("Server address (wss://your-domain or wss://<ip>.sslip.io)", state.workerUrl);
