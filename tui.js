@@ -862,6 +862,10 @@ async function doctorCli() {
   const g = paint(A.green), rd = paint(A.red), am = paint(A.amber), dm = paint(A.dim), bd = paint(A.bold), tl = paint(A.teal);
   const sym = { ok: g("✓"), warn: am("!"), fail: rd("✗"), skip: dm("·") };
   process.stdout.write(`\n${tl("[•]")} ${bd("collateral doctor")}\n\n`);
+  if (cfg.uuid === DEMO_UUID) {
+    process.stdout.write(`  ${dm("·")}  ${bd("demo config")} - display-only, no real server to check.\n     ${dm("Switch to a real machine first (press m in the app).")}\n\n`);
+    process.exit(0);
+  }
   let bad = 0, warn = 0;
   for await (const res of diagnose(cfg)) {
     if (res.status === "fail") bad++; else if (res.status === "warn") warn++;

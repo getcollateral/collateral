@@ -81,10 +81,9 @@ export async function* diagnose(cfg = {}) {
   yield p.ok ? { name: `port ${port}`, status: "ok", detail: "reachable" }
              : { name: `port ${port}`, status: "fail", detail: `unreachable (${p.err}) - open it in the VM's firewall / security list` };
 
-  const p80 = await tcp(host, 80);
-  yield p80.ok ? { name: "port 80", status: "ok", detail: "reachable (used for cert renewal)" }
-               : { name: "port 80", status: "warn", detail: `unreachable (${p80.err}) - Let's Encrypt renewal may fail` };
-
+  // NB: we deliberately don't check port 80. Caddy fronts everything on 443 and renews its cert via
+  // the TLS-ALPN-01 challenge, so port 80 is usually closed on a perfectly healthy server. The TLS
+  // cert check below is the real signal for HTTPS health.
   if (secure && p.ok && !isIpv4(host)) {
     const t = await tlsCert(host, port, host);
     if (t.ok) {

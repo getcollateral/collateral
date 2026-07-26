@@ -138,7 +138,7 @@ If something's off, run the built-in health check — it pinpoints exactly where
 npx getcollateral doctor
 ```
 
-It runs a checklist — your config, DNS, ports 80/443, the TLS cert, SSH to the VM, and the tunnel
+It runs a checklist — your config, DNS, port 443, the TLS cert, SSH to the VM, and the tunnel
 end-to-end (the live exit IP) — and prints a pass/warn/fail line for each. Exits non-zero if
 anything's broken, so it's scriptable too.
 
