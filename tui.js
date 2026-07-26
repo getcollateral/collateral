@@ -139,6 +139,61 @@ function markStr(s) {
 
 // Build the panel. Returns { lines, zones } where zones are clickable regions:
 // { line (index into lines), x0, x1 (0-based content columns), key }.
+// The in-app "how to create your VM" walkthrough, one page per screen (view === "guide").
+// Covers the Oracle Always-Free path and the generic "any Ubuntu VM" path.
+const GUIDE_PAGES = [
+  [
+    `${A.bold}Create your VM${A.reset}  ${A.dim}the one-time part${A.reset}`, SEP,
+    `You need one Linux ${A.bold}Ubuntu${A.reset} VM with a public IP + SSH.`,
+    `Two easy paths:`,
+    `  ${A.amber}1${A.reset}  ${A.bold}Oracle Cloud Always-Free${A.reset}  ${A.dim}free forever, recommended${A.reset}`,
+    `  ${A.amber}2${A.reset}  ${A.bold}Any Ubuntu VM you already have${A.reset}  ${A.dim}VPS / cloud / home${A.reset}`,
+    ``,
+    `${A.dim}Already have a VM? Press space to the last page.${A.reset}`,
+  ],
+  [
+    `${A.bold}Oracle${A.reset}  ${A.dim}create the free account${A.reset}`, SEP,
+    `${A.amber}1.${A.reset} Sign up at ${A.teal}oracle.com/cloud/free${A.reset}`,
+    `   ${A.dim}A card verifies you - Always-Free never charges.${A.reset}`,
+    `${A.amber}2.${A.reset} Choose your ${A.bold}home region${A.reset} = the one nearest you,`,
+    `   for lower latency. ${A.dim}You can't change it later.${A.reset}`,
+  ],
+  [
+    `${A.bold}Oracle${A.reset}  ${A.dim}launch an Ubuntu instance${A.reset}`, SEP,
+    `Console: ${A.muted}Menu -> Compute -> Instances -> Create${A.reset}`,
+    `  ${A.amber}•${A.reset} Image:  ${A.bold}Canonical Ubuntu${A.reset} ${A.dim}(22.04 or 24.04)${A.reset}`,
+    `  ${A.amber}•${A.reset} Shape:  an ${A.bold}Always-Free-eligible${A.reset} one`,
+    `     ${A.dim}VM.Standard.A1.Flex (1 OCPU/6GB) or E2.1.Micro${A.reset}`,
+  ],
+  [
+    `${A.bold}Oracle${A.reset}  ${A.dim}key, IP, and ports${A.reset}`, SEP,
+    `  ${A.amber}•${A.reset} SSH keys: pick ${A.bold}Generate a key pair${A.reset}, then`,
+    `     ${A.bold}download the private key${A.reset} ${A.dim}(save ~/.ssh/collateral.key)${A.reset}`,
+    `  ${A.amber}•${A.reset} After it boots, copy the ${A.bold}Public IP address${A.reset}`,
+    `  ${A.amber}•${A.reset} Open ports: the subnet's ${A.muted}Security List${A.reset} -> add`,
+    `     Ingress  source ${A.teal}0.0.0.0/0${A.reset}  TCP  ports ${A.teal}80${A.reset} and ${A.teal}443${A.reset}`,
+    `     ${A.dim}(the one thing setup can't do for you)${A.reset}`,
+  ],
+  [
+    `${A.bold}Any Ubuntu VM instead${A.reset}`, SEP,
+    `Already run a server somewhere? You just need:`,
+    `  ${A.amber}•${A.reset} ${A.bold}Ubuntu${A.reset} with a ${A.bold}public IP${A.reset}`,
+    `  ${A.amber}•${A.reset} SSH in as a user with ${A.bold}passwordless sudo${A.reset}`,
+    `  ${A.amber}•${A.reset} Ports ${A.teal}80${A.reset} + ${A.teal}443${A.reset} open in its firewall / security group`,
+    ``,
+    `${A.dim}DigitalOcean, AWS, Hetzner, a home box - all fine.${A.reset}`,
+  ],
+  [
+    `${A.bold}You're ready${A.reset}`, SEP,
+    `Setup will ask for three things:`,
+    `  ${A.teal}public IP${A.reset}   the VM's address`,
+    `  ${A.teal}SSH user${A.reset}    ${A.dim}ubuntu on Oracle, or your VM's login${A.reset}`,
+    `  ${A.teal}key path${A.reset}    the private key file you saved`,
+    ``,
+    `Press ${A.amber}enter${A.reset} to start setup now, or ${A.amber}esc${A.reset} to do it later.`,
+  ],
+];
+
 function buildBox(s) {
   const cols = process.stdout.columns || 80;
   const innerW = Math.max(46, Math.min(72, cols - 4));
@@ -173,6 +228,16 @@ function buildBox(s) {
       `${A.dim}configure per site.${A.reset}`, SEP,
       `${A.dim}press any key or click to go back${A.reset}`,
     );
+    return finish();
+  }
+
+  if (s.view === "guide") {
+    const i = Math.max(0, Math.min(s.guideStep || 0, GUIDE_PAGES.length - 1));
+    const nav = [];
+    if (i > 0) nav.push(`${A.amber}b${A.reset}${A.dim} back${A.reset}`);
+    nav.push(i < GUIDE_PAGES.length - 1 ? `${A.amber}space${A.reset}${A.dim} next${A.reset}` : `${A.amber}enter${A.reset}${A.dim} start setup${A.reset}`);
+    nav.push(`${A.amber}esc${A.reset}${A.dim} exit${A.reset}`);
+    body.push(...GUIDE_PAGES[i], SEP, nav.join(`${A.dim}  ·  ${A.reset}`) + `   ${A.muted}${i + 1}/${GUIDE_PAGES.length}${A.reset}`);
     return finish();
   }
 
@@ -733,7 +798,7 @@ async function confirmWord(lines, word) { return (await promptStart(lines, "")).
 
 // The `s` key: SSH into your own VM and stand up the server automatically.
 async function setupVps() {
-  const ok = await confirmWord([
+  const ans = (await promptStart([
     `${A.amber}${A.bold}Set up your own server${A.reset}`,
     ``,
     `You need a Linux VM with SSH access. An ${A.bold}Oracle Cloud Always-Free${A.reset}`,
@@ -746,9 +811,11 @@ async function setupVps() {
     `${A.dim}Optional: use your own domain (A record → the VM) for a stronger,`,
     `unblockable endpoint, or press enter for automatic ${A.reset}${A.dim}<ip>.sslip.io.${A.reset}`,
     ``,
-    `Type ${A.amber}yes${A.reset} to continue, or enter to cancel.`,
-  ], "yes");
-  if (!ok) { draw(); return setMsg("Setup cancelled."); }
+    `${A.dim}No VM yet? Type ${A.reset}${A.amber}guide${A.reset}${A.dim} for a step-by-step walkthrough.${A.reset}`,
+    `Type ${A.amber}yes${A.reset} to continue, ${A.amber}guide${A.reset} for help, or enter to cancel.`,
+  ], "")).trim().toLowerCase();
+  if (ans === "guide") { state.view = "guide"; state.guideStep = 0; return draw(); }
+  if (ans !== "yes") { draw(); return setMsg("Setup cancelled."); }
 
   const host = await promptLine("VM public IP address", state.vpsHost || "");
   if (!host) { draw(); return setMsg("Cancelled, no IP entered."); }
@@ -1110,6 +1177,7 @@ function keyHandler(str) {
     else if (move) updateHover(Number(move[2]), Number(move[3]));
     str = str.replace(/\x1b\[<\d+;\d+;\d+[Mm]/g, ""); // strip mouse; fall through for a trailing key
   }
+  if (state.view === "guide") { handleGuideKey(str); return; }
   const k = str.length === 1 ? str.toLowerCase() : "";
   if (k === "q") return quit();                 // quit works even mid-connect/setup
   if (!k) { if (events.length) return; return draw(); } // no key: mouse-only chunk, or re-sync
@@ -1124,6 +1192,7 @@ function hitAt(X, Y) {
 }
 
 function onClick(X, Y) {
+  if (state.view === "guide") return;   // walkthrough is keyboard-navigated
   if (state.view === "help" || state.view === "share") { state.view = "main"; return draw(); }
   if (state.busy) return;
   const key = hitAt(X, Y);
@@ -1135,6 +1204,19 @@ function onClick(X, Y) {
 function updateHover(X, Y) {
   const next = (state.view === "main" && !state.busy) ? hitAt(X, Y) : null;
   if (next !== state.hover) { state.hover = next; draw(); }
+}
+
+// Paged VM walkthrough navigation: space/enter/n/→ advance, b/backspace/← go back, esc/q exit,
+// and enter on the last page jumps straight into setup.
+function handleGuideKey(str) {
+  const last = GUIDE_PAGES.length - 1;
+  const i = state.guideStep || 0;
+  if (str === "\x1b" || str.toLowerCase() === "q") { state.view = "main"; state.guideStep = 0; return draw(); }
+  if (str === "\x7f" || str === "\b" || str.toLowerCase() === "b" || str === "\x1b[D") { state.guideStep = Math.max(0, i - 1); return draw(); }
+  if (str === "\r" || str === "\n" || str === " " || str.toLowerCase() === "n" || str === "\x1b[C") {
+    if (i >= last) { state.view = "main"; state.guideStep = 0; return setupVps(); }
+    state.guideStep = i + 1; return draw();
+  }
 }
 
 let cleaned = false;

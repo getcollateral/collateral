@@ -38,6 +38,42 @@ You don't need to know anything about proxies, TLS, or server admin. The app doe
 
 ---
 
+## Create your VM (step by step)
+
+You need one Linux **Ubuntu** VM with a public IP and SSH. Two easy paths - and the app has this
+same walkthrough built in (press **s**, then type `guide`).
+
+### Option 1: Oracle Cloud Always-Free (recommended, free forever)
+
+1. Sign up at [oracle.com/cloud/free](https://www.oracle.com/cloud/free/). A card is needed to
+   verify you, but Always-Free resources never charge. Pick your **home region** = the one nearest
+   you (lower latency; you can't change it later).
+2. **Menu → Compute → Instances → Create instance.**
+3. **Image:** Canonical **Ubuntu** (22.04 or 24.04). **Shape:** an Always-Free-eligible one -
+   `VM.Standard.A1.Flex` (1 OCPU / 6 GB) or `VM.Standard.E2.1.Micro`.
+4. **SSH keys:** choose *Generate a key pair for me* and **download the private key** (save it
+   somewhere like `~/.ssh/collateral.key`), or paste your own public key. Then create it.
+5. Once it boots, copy the **Public IP address**.
+6. **Open ports 80 and 443** - the one thing setup can't do for you. Open the instance's subnet
+   **Security List** and add an **Ingress rule**: source `0.0.0.0/0`, IP protocol TCP, destination
+   ports `80` and `443`.
+
+### Option 2: any Ubuntu VM you already have
+
+DigitalOcean, AWS, Hetzner, a home box - anything works, as long as it has:
+
+- **Ubuntu** with a **public IP**
+- SSH access as a user with **passwordless sudo** (`ubuntu`, `root`, or your own sudo user)
+- ports **80 and 443** open in its firewall / cloud security group
+
+### Then
+
+You'll have three things: the **public IP**, the **SSH user** (`ubuntu` on Oracle), and the
+**private key file**. Run `npx getcollateral`, press **s**, and enter those - setup does the rest on
+the VM (server, HTTPS cert, firewall).
+
+---
+
 ## Quick start
 
 1. Create a free Ubuntu VM (Oracle Cloud Always-Free works well) and note its **public IP**,
