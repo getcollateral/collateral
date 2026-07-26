@@ -4,7 +4,7 @@
 //
 //   node tui.js        (or: npm run tui)
 //
-// Controls: c connect/disconnect · t test · w set server · u set key · g generate
+// Controls: c connect/disconnect · e connection details · t test · g generate key
 //           m saved machines · k friends · p proxy help · q quit
 
 import readline from "node:readline";
@@ -223,10 +223,9 @@ function buildBox(s) {
   const tw = s.tunActive ? `${A.green}on${A.reset}` : `${A.muted}off${A.reset}`;
   const menu = [
     [["s", `${A.bold}first-time setup${A.reset}`], ["c", s.connected ? "disconnect" : "connect"]],
-    [["t", "test connection"], ["w", "set server address"]],
-    [["u", "set access key"], ["g", "generate new key"]],
+    [["e", "connection details"], ["t", "test connection"]],
+    [["g", "generate new key"], ["x", "share config (QR)"]],
     [["d", `system proxy: ${dw}`], ["f", `full tunnel: ${tw}`]],
-    [["x", "share config (QR)"], ["i", "import (scan QR)"]],
     [["m", "saved machines"], ["k", "friends"]],
     [["p", "proxy setup help"], ["q", "quit"]],
   ];
@@ -706,6 +705,54 @@ function deleteMachine(i) {
   return setMsg(`Deleted "${removed.desc || "machine"}".`);
 }
 
+// One place to set the connection: paste a link (which carries both endpoint + key), scan a QR, or
+// set the server / key by hand. Replaces the separate w / u / i keys.
+async function details() {
+  const lines = [
+    `${A.amber}${A.bold}Connection details${A.reset}`, ``,
+    `  ${A.muted}server${A.reset}  ${state.workerUrl ? A.teal + ellip(state.workerUrl, 44) + A.reset : A.dim + "(not set)" + A.reset}`,
+    `  ${A.muted}key${A.reset}     ${state.uuid ? ellip(state.uuid, 44) : A.dim + "(not set)" + A.reset}`,
+    ``,
+    `${A.amber}l${A.reset} import a link (vless://…)`,
+    `${A.amber}w${A.reset} set server address`,
+    `${A.amber}u${A.reset} set access key`,
+    ...(scanSupported() ? [`${A.amber}s${A.reset} scan a QR with the camera`] : []),
+    ``,
+    `${A.dim}enter to go back${A.reset}`,
+  ];
+  const ans = (await promptStart(lines, "")).trim().toLowerCase();
+  if (ans === "l") return importLink();
+  if (ans === "w") return setServer();
+  if (ans === "u") return setKey();
+  if (ans === "s" && scanSupported()) return importFromCamera();
+  return draw(); // enter / anything else -> back to main
+}
+
+async function importLink() {
+  const link = (await promptLine("Paste a vless:// link", "")).trim();
+  if (!link) return setMsg("Cancelled.");
+  let cfg;
+  try { cfg = parseVlessUri(link); }
+  catch { return setMsg(A.red + "That isn't a vless:// link." + A.reset); }
+  if (!isWsUrl(cfg.workerUrl) || !isUuid(cfg.uuid)) return setMsg(A.red + "That link is missing a wss:// endpoint or a valid key." + A.reset);
+  state.workerUrl = cfg.workerUrl; state.uuid = cfg.uuid;
+  saveConfig({ workerUrl: cfg.workerUrl, uuid: cfg.uuid });
+  let host = cfg.workerUrl; try { host = new URL(cfg.workerUrl).host; } catch {}
+  return setMsg(A.green + `Imported ${host}. Press c to connect.` + A.reset);
+}
+
+async function setServer() {
+  const v = await promptLine("Server address (wss://your-domain or wss://<ip>.sslip.io)", state.workerUrl);
+  state.workerUrl = v || ""; saveConfig({ workerUrl: state.workerUrl });
+  return setMsg(state.workerUrl ? "Saved server address." : "Cleared server address.");
+}
+
+async function setKey() {
+  const v = await promptLine("Access key (UUID): paste it", state.uuid);
+  state.uuid = v || ""; saveConfig({ uuid: state.uuid });
+  return setMsg(state.uuid ? "Saved access key." : "Cleared access key.");
+}
+
 const expandKey = (p) => String(p || "").replace(/^~(?=$|\/)/, os.homedir());
 
 // Friends: let other people use YOUR server. Each friend gets their own key, appended to the VM's
@@ -778,16 +825,7 @@ async function handleKey(k) {
     case "m": return machines();
     case "k": return friends();
     case "p": state.view = "help"; return draw();
-    case "w": {
-      const v = await promptLine("Server address (wss://your-domain or wss://<ip>.sslip.io)", state.workerUrl);
-      state.workerUrl = v || ""; saveConfig({ workerUrl: state.workerUrl });
-      return setMsg(state.workerUrl ? "Saved server address." : "Cleared server address.");
-    }
-    case "u": {
-      const v = await promptLine("Access key (UUID): paste it", state.uuid);
-      state.uuid = v || ""; saveConfig({ uuid: state.uuid });
-      return setMsg(state.uuid ? "Saved access key." : "Cleared access key.");
-    }
+    case "e": return details();
     default: return;
   }
 }
