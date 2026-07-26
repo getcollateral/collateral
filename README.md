@@ -55,7 +55,7 @@ A full-screen terminal app - clickable, live status, zero dependencies. The bran
 **is** the status light: filled when connected, empty `[ ]` when idle, a spinner while it's
 working.
 
-![Collateral — the terminal control panel: connected, with the full device-wide tunnel on](assets/tui.png)
+![Collateral - the terminal control panel: connected, with the full device-wide tunnel on](assets/tui.png)
 
 **Click** any row, or use the keys:
 
@@ -124,10 +124,10 @@ your phone on it too.
 
 Let other people use your server without handing over your own key. Press **k**:
 
-- **a** — add a friend: give them a name, and Collateral generates a fresh key, adds it to your
+- **a** - add a friend: give them a name, and Collateral generates a fresh key, adds it to your
   VM over SSH, and shows a QR/link to send them. Their key works immediately (the server reloads
-  the key list live — no redeploy).
-- **rN** — revoke friend #N: removes their key from the VM, cutting them off instantly.
+  the key list live - no redeploy).
+- **rN** - revoke friend #N: removes their key from the VM, cutting them off instantly.
 
 Everyone shares one server but holds their own key, so you can revoke a single person without
 disrupting anyone else. (If you set your server up before this feature, re-run setup (`s`) once so
@@ -145,14 +145,14 @@ points at your VM before continuing. Press enter to skip and use the automatic d
 
 ## Troubleshooting
 
-If something's off, run the built-in health check — it pinpoints exactly where the setup breaks:
+If something's off, run the built-in health check - it pinpoints exactly where the setup breaks:
 
 ```
 npx getcollateral doctor
 ```
 
-It runs a checklist — your config, DNS, port 443, the TLS cert, SSH to the VM, and the tunnel
-end-to-end (the live exit IP) — and prints a pass/warn/fail line for each. Exits non-zero if
+It runs a checklist - your config, DNS, port 443, the TLS cert, SSH to the VM, and the tunnel
+end-to-end (the live exit IP) - and prints a pass/warn/fail line for each. Exits non-zero if
 anything's broken, so it's scriptable too.
 
 ## Honest limits

@@ -4,7 +4,7 @@ Collateral is a censorship-circumvention tool, so security reports are taken ser
 
 ## Reporting a vulnerability
 
-Please report vulnerabilities **privately** — not in a public issue.
+Please report vulnerabilities **privately** - not in a public issue.
 
 Use GitHub's private vulnerability reporting: the repository's **Security** tab →
 **Report a vulnerability**. (If it isn't enabled yet, turn on "Private vulnerability
