@@ -20,6 +20,7 @@ import { parseEndpoint } from "./common/doctor.js";
 import { parseKeys } from "./worker-shim.js";
 import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun, parseLinuxDefaultRoute, parseResolvConf, parseResolvectl, firstFreeTun, pfKillSwitchRules, iptablesKillSwitchSetup, iptablesKillSwitchTeardown } from "./common/tun.js";
 import { aptHint } from "./provision/vps.js";
+import { socksUdpWrap, socksUdpUnwrap } from "./common/dns.js";
 import { normalizeDomain } from "./provision/vps.js";
 
 const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
@@ -382,6 +383,17 @@ test("kill switch (Linux iptables): dedicated chain hooked into OUTPUT, cleanly 
   const down = iptablesKillSwitchTeardown();
   assert.match(down, /-D OUTPUT -j COLLATERAL_KS/);
   assert.match(down, /-X COLLATERAL_KS/);
+});
+
+test("dns: socks-udp wrap/unwrap round-trips the DNS payload", () => {
+  const payload = Buffer.from("a-dns-message");
+  const wrapped = socksUdpWrap("1.1.1.1", 53, payload);
+  assert.equal(wrapped[2], 0);                       // FRAG = 0
+  assert.equal(wrapped[3], 1);                       // ATYP = IPv4
+  assert.equal(wrapped.readUInt16BE(8), 53);         // dest port
+  assert.deepEqual(socksUdpUnwrap(wrapped), payload); // strips the header cleanly
+  assert.equal(socksUdpUnwrap(Buffer.from([1, 2])), null);       // too short
+  assert.equal(socksUdpUnwrap(Buffer.from([0, 0, 1, 1])), null); // FRAG != 0 rejected
 });
 
 test("provision: aptHint gives guided advice for the common Oracle first-boot failures", () => {
