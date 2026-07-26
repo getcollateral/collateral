@@ -11,14 +11,40 @@
 import http from "node:http";
 import net from "node:net";
 import dgram from "node:dgram";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { FrameParser, encodeFrame, computeAcceptKey, OPCODES } from "./common/ws-frame.js";
-import { parseVlessHeader, buildVlessResponse, uuidToBytes, uuidEquals, bytesToUuid } from "./common/vless.js";
+import { parseVlessHeader, buildVlessResponse, uuidToBytes } from "./common/vless.js";
 import { decoyPage, DECOY_HEADERS } from "./common/decoy.js";
 
-export function startWorker({ port = 8787, host = "127.0.0.1", uuid, quiet = false } = {}) {
-  if (!uuid) throw new Error("startWorker: uuid is required");
-  const expected = uuidToBytes(uuid);
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const hexOf = (u) => Buffer.from(u).toString("hex"); // normalize 16 UUID bytes -> hex for set membership
+
+// Build the set of allowed keys (as hex) from arbitrary lines: bare UUIDs, or `# label` comments
+// and blank lines that are ignored. Multiple users share one server by each holding their own key.
+export function parseKeys(lines) {
+  const set = new Set();
+  for (const line of lines || []) { const m = UUID_RE.exec(line || ""); if (m) set.add(hexOf(uuidToBytes(m[0]))); }
+  return set;
+}
+
+// Accepts a single `uuid`, an array `uuids`, and/or a `keysFile` (one UUID per line, `#` comments).
+// The keys file is re-read on change (fs.watch), so adding or revoking a friend's key on the VM
+// takes effect immediately, with no restart.
+export function startWorker({ port = 8787, host = "127.0.0.1", uuid, uuids, keysFile, quiet = false } = {}) {
+  let allowed = new Set();
+  const loadKeys = () => {
+    const lines = [];
+    if (keysFile) { try { lines.push(...fs.readFileSync(keysFile, "utf8").split("\n")); } catch {} }
+    if (Array.isArray(uuids)) lines.push(...uuids);
+    if (uuid) lines.push(uuid);
+    allowed = parseKeys(lines);
+    if (!quiet) console.log(`[server] ${allowed.size} key(s) loaded`);
+  };
+  loadKeys();
+  if (!allowed.size) throw new Error("startWorker: at least one key (uuid / uuids / keysFile) is required");
+  if (keysFile) { try { fs.watch(keysFile, { persistent: false }, () => loadKeys()); } catch {} }
+  const isAllowed = (u) => allowed.has(hexOf(u));
 
   const server = http.createServer((req, res) => {
     // Anything that is not a WebSocket upgrade gets the decoy.
@@ -38,18 +64,18 @@ export function startWorker({ port = 8787, host = "127.0.0.1", uuid, quiet = fal
         "Connection: Upgrade\r\n" +
         `Sec-WebSocket-Accept: ${accept}\r\n\r\n`
     );
-    handleSession(socket, head, expected, quiet);
+    handleSession(socket, head, isAllowed, quiet);
   });
 
   server.listen(port, host, () => {
-    if (!quiet) console.log(`[worker-shim] listening on ${host}:${server.address().port}  uuid=${bytesToUuid(expected)}`);
+    if (!quiet) console.log(`[server] listening on ${host}:${server.address().port}  keys=${allowed.size}`);
   });
   return server;
 }
 
 const UDP_IDLE_MS = 60000; // close an idle UDP association after this long (no close signal in UDP)
 
-function handleSession(socket, head, expected, quiet) {
+function handleSession(socket, head, isAllowed, quiet) {
   const parser = new FrameParser();
   let mode = null;         // "tcp" | "udp"
   let upstream = null;     // TCP: net.Socket
@@ -85,7 +111,7 @@ function handleSession(socket, head, expected, quiet) {
         } catch {
           return closeAll();
         }
-        if (!uuidEquals(hdr.uuid, expected)) return closeAll(); // bad auth -> drop
+        if (!isAllowed(hdr.uuid)) return closeAll(); // key not in the allowed set -> drop
 
         if (hdr.command === 1) {
           mode = "tcp";
@@ -126,12 +152,13 @@ function handleSession(socket, head, expected, quiet) {
   socket.on("error", closeAll);
 }
 
-// Run standalone: `USER_UUID=... node worker-shim.js`
+// Run standalone: `USER_UUID=... node worker-shim.js` or `KEYS_FILE=/opt/collateral/keys node worker-shim.js`
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const keysFile = process.env.KEYS_FILE;
   const uuid = process.env.USER_UUID;
-  if (!uuid) {
-    console.error("Set USER_UUID (a v4 UUID) to run the shim standalone, or use `npm run demo`.");
+  if (!keysFile && !uuid) {
+    console.error("Set USER_UUID or KEYS_FILE to run the server standalone, or use `npm run demo`.");
     process.exit(1);
   }
-  startWorker({ port: Number(process.env.WORKER_PORT || 8787), uuid });
+  startWorker({ port: Number(process.env.WORKER_PORT || 8787), uuid, keysFile });
 }

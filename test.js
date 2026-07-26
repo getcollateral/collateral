@@ -17,6 +17,7 @@ import { vlessUriFromConfig, parseVlessUri } from "./common/config.js";
 import { FrameParser, encodeFrame, OPCODES } from "./common/ws-frame.js";
 import { renderFrame, hitTest } from "./tui.js";
 import { parseEndpoint } from "./common/doctor.js";
+import { parseKeys } from "./worker-shim.js";
 import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun, parseLinuxDefaultRoute, parseResolvConf, parseResolvectl, firstFreeTun } from "./common/tun.js";
 import { normalizeDomain } from "./provision/vps.js";
 
@@ -280,6 +281,13 @@ test("TUN(linux): resolv.conf public resolvers, skipping the systemd-resolved st
 test("TUN(linux): firstFreeTun picks the first unused collateralN", () => {
   assert.equal(firstFreeTun("lo eth0 collateral0 collateral1"), "collateral2");
   assert.equal(firstFreeTun("lo eth0 wlan0"), "collateral0");
+});
+
+test("server: parseKeys builds the allowed set (labels/blank/garbage ignored, deduped)", () => {
+  const A = "3d9a7f2e-1c84-4b6d-a05f-8e21c9b4d7f0", B = "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d";
+  const set = parseKeys(["# owner", A, "", "# alice", B, "  " + A + "  ", "not-a-uuid"]);
+  assert.equal(set.size, 2);        // A + B; A deduped; comment / blank / garbage dropped
+  assert.equal(parseKeys([]).size, 0);
 });
 
 test("doctor: parseEndpoint splits host / port / scheme", () => {
