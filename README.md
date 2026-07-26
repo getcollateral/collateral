@@ -12,8 +12,14 @@ The exit IP is yours.
 npx getcollateral
 ```
 
-That's it - the command downloads and opens the control panel. Needs [Node](https://nodejs.org)
-≥ 22.
+That's it - the command downloads and opens the control panel. Or install it once, so `collateral`
+becomes a real command you can run anywhere (nicer for regular use, servers, and the headless CLI):
+
+```
+npm i -g getcollateral
+```
+
+Needs [Node](https://nodejs.org) ≥ 22.
 
 - **Website:** https://getcollateral.xyz
 - **Works on:** macOS, Linux, Windows (the terminal app). Device-wide "full tunnel" mode works
@@ -177,15 +183,18 @@ anything's broken, so it's scriptable too.
 
 ## Run it headless (servers, scripts)
 
-Besides the interactive app, Collateral has plain subcommands that never open the TUI - handy on a
-Linux box or in a script:
+The subcommands work without the TUI - handy on a Linux box or in a script. With npx (nothing to
+install):
 
 ```
-collateral up       # connect in the background, prints the exit IP
-collateral status   # status + exit IP  (exit 0 = up, non-zero = down)
-collateral down     # stop the background tunnel
-collateral doctor   # connection health check
+npx getcollateral up        # connect in the background, prints the exit IP
+npx getcollateral status    # status + exit IP  (exit 0 = up, non-zero = down)
+npx getcollateral down      # stop the background tunnel
+npx getcollateral doctor    # connection health check
 ```
+
+On a server, install it once (`npm i -g getcollateral`) so the commands are stable and fast - then
+it's just `collateral up`, `collateral status`, and so on.
 
 `up` runs the SOCKS proxy on `127.0.0.1:1080` (override with `COLLATERAL_SOCKS_PORT`) in a detached
 process that stays up until `down` or a reboot. Configure it once in the app first, or copy your
