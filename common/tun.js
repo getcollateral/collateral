@@ -60,6 +60,7 @@ const OWNER_FILE = path.join(DIR, "tun.owner");
 const SESSION_SH = path.join(DIR, "tun-session.sh");
 const LOG_FILE = path.join(DIR, "tun.log");
 const KS_FILE = path.join(DIR, "killswitch.pf.conf");   // macOS pf anchor rules for the kill switch
+const DNS_SCRIPT = fileURLToPath(new URL("./dns.js", import.meta.url)); // forwarder, run as root on :53 (macOS)
 
 const IS_LINUX = process.platform === "linux";
 export function supported() { return process.platform === "darwin" || IS_LINUX; }
@@ -164,14 +165,10 @@ export function iptablesKillSwitchTeardown() {
   ].join("\n");
 }
 
-// --- DNS-through-tunnel: redirect the machine's port-53 traffic to the local forwarder, which
-// relays it over the tunnel. The forwarder's own upstream uses the SOCKS port (not :53), so it
-// can never loop back through this rule. Pure -> unit-testable. ---
-export function pfDnsRedirect(dnsPort) {
-  // rdr must precede filter rules in a pf anchor. NOTE: redirecting locally-originated :53 on macOS
-  // is the experimental part - validate that mDNSResponder actually honors it before trusting it.
-  return `rdr pass inet proto { tcp udp } from any to any port 53 -> 127.0.0.1 port ${dnsPort}\n`;
-}
+// --- DNS-through-tunnel (Linux): redirect the machine's port-53 traffic to the local forwarder,
+// which relays it over the tunnel. The forwarder's own upstream uses the SOCKS port (not :53), so
+// it can never loop back through this rule. (macOS can't redirect locally-originated :53 via pf, so
+// it points the system resolver at the forwarder instead - see sessionScript.) Pure, unit-testable.
 export function iptablesDnsRedirect(dnsPort) {
   return [
     `iptables -t nat -A OUTPUT -p udp --dport 53 -j REDIRECT --to-ports ${dnsPort}`,
@@ -256,23 +253,38 @@ export async function ensureBinary(onLog = () => {}) {
 
 // The root session script. It owns tun2socks, applies the routing, then blocks until asked to
 // stop / the app dies / tun2socks dies - and always tears down on the way out (trap on EXIT).
-export function sessionScript({ dev, socksPort, serverIp, dnsIps, service, ownerPid, killSwitch = false, dnsTunnel = false, dnsPort = 5353 }) {
+export function sessionScript({ dev, socksPort, serverIp, dnsIps, service, ownerPid, killSwitch = false, dnsTunnel = false, dnsNode = "", dnsScript = "", dnsUpstream = "1.1.1.1" }) {
   // When DNS is tunnelled we must NOT host-route the resolvers direct (that was the leak).
   const dnsAdd = dnsTunnel ? "" : dnsIps.map((d) => `route -n add -host ${d} "$GW" 2>/dev/null || true`).join("\n  ");
   const dnsDel = dnsTunnel ? "" : dnsIps.map((d) => `route -n delete -host ${d} 2>/dev/null || true`).join("\n  ");
-  const usePf = killSwitch || dnsTunnel;   // one pf anchor carries the DNS rdr and/or the kill-switch block
-  const pfBody = (dnsTunnel ? pfDnsRedirect(dnsPort) : "") + (killSwitch ? pfKillSwitchRules(serverIp, dnsIps, dev) : "");
-  const ksSetup = usePf ? `
-# pf: ${[dnsTunnel ? "redirect :53 to the local DNS forwarder" : "", killSwitch ? "kill-switch lockdown" : ""].filter(Boolean).join(" + ")}
+  const ksSetup = killSwitch ? `
+# kill switch: lock down all egress except loopback, the tun, the server, and DNS.
 cat > ${JSON.stringify(KS_FILE)} <<'PFEOF'
-${pfBody}PFEOF
+${pfKillSwitchRules(serverIp, dnsIps, dev)}PFEOF
 KSTOKEN=$(pfctl -E 2>&1 | awk '/Token/{print $3; exit}')
 { cat /etc/pf.conf 2>/dev/null; printf 'anchor "collateral"\\nload anchor "collateral" from "%s"\\n' ${JSON.stringify(KS_FILE)}; } | pfctl -f - 2>/dev/null || true` : "";
-  const ksTeardown = usePf ? `
+  const ksTeardown = killSwitch ? `
   pfctl -a collateral -F all 2>/dev/null || true
   pfctl -f /etc/pf.conf 2>/dev/null || true
   [ -n "\${KSTOKEN:-}" ] && pfctl -X "$KSTOKEN" 2>/dev/null || true
   rm -f ${JSON.stringify(KS_FILE)}` : "";
+  // DNS-through-tunnel (macOS): pf can't redirect locally-originated :53, so point the system
+  // resolver at a local forwarder on :53 (run as root here) that relays over the SOCKS tunnel. The
+  // previous DNS is saved and restored by cleanup(), which runs on stop AND on crash/app-death via
+  // the same trap + PID watchdog that heals the routes - so system DNS can never get stuck.
+  const useDns = !!(dnsTunnel && dnsScript && service);
+  const dnsSetup = useDns ? `
+OLD_DNS=$(networksetup -getdnsservers "$SERVICE" 2>/dev/null)
+SOCKS_PORT="$SOCKS" DNS_PORT=53 DNS_UPSTREAM=${JSON.stringify(dnsUpstream)} ${JSON.stringify(dnsNode)} ${JSON.stringify(dnsScript)} </dev/null >/dev/null 2>&1 &
+DPID=$!
+for i in $(seq 1 20); do lsof -nP -iUDP:53 >/dev/null 2>&1 && break; sleep 0.1; done
+networksetup -setdnsservers "$SERVICE" 127.0.0.1
+dscacheutil -flushcache 2>/dev/null || true; killall -HUP mDNSResponder 2>/dev/null || true` : "";
+  const dnsRestore = useDns ? `
+  [ -n "\${DPID:-}" ] && kill "$DPID" 2>/dev/null
+  if printf '%s' "\${OLD_DNS:-}" | grep -qi "aren't any"; then networksetup -setdnsservers "$SERVICE" "Empty" 2>/dev/null || true
+  else networksetup -setdnsservers "$SERVICE" \${OLD_DNS:-Empty} 2>/dev/null || true; fi
+  dscacheutil -flushcache 2>/dev/null || true; killall -HUP mDNSResponder 2>/dev/null || true` : "";
   const holdLoop = killSwitch ? `
 # kill-switch mode: keep the lockdown even if tun2socks dies; relaunch it to self-repair. Stop only
 # on request or when the app is gone - then the trap flushes the firewall and heals the network.
@@ -309,7 +321,7 @@ cleanup() {
   [ -n "\${TPID:-}" ] && kill "$TPID" 2>/dev/null
   route -n delete -host "$SERVER_IP" 2>/dev/null || true
   ${dnsDel || ": no public dns to unroute"}
-  [ -n "$SERVICE" ] && networksetup -setv6automatic "$SERVICE" 2>/dev/null || true  # restore IPv6${ksTeardown}
+  [ -n "$SERVICE" ] && networksetup -setv6automatic "$SERVICE" 2>/dev/null || true  # restore IPv6${ksTeardown}${dnsRestore}
   # the /1 routes + the utun itself disappear automatically when tun2socks exits
   rm -f "$STOP" "$READY"
 }
@@ -329,9 +341,9 @@ ${dnsAdd || ": no public dns to route"}
 route -n add -net 0.0.0.0/1 "$ADDR"              # capture everything else via the utun...
 route -n add -net 128.0.0.0/1 "$ADDR"            # ...without ever touching the real default route
 # IPv6: the TUN is v4-only, so disable v6 on the primary service - otherwise v6 traffic bypasses
-# the tunnel. cleanup() restores it to automatic. (DNS stays direct; tunnelling it needs a local
-# forwarder, a separate TODO - macOS mDNSResponder doesn't follow the utun routes.)
-[ -n "$SERVICE" ] && networksetup -setv6off "$SERVICE" 2>/dev/null || true${ksSetup}
+# the tunnel. cleanup() restores it to automatic. (DNS is host-routed direct, unless the DNS-tunnel
+# option is on, in which case the local forwarder set up just below handles it.)
+[ -n "$SERVICE" ] && networksetup -setv6off "$SERVICE" 2>/dev/null || true${ksSetup}${dnsSetup}
 touch "$READY"
 ${holdLoop}
 `;
@@ -446,7 +458,7 @@ export async function startTun({ socksPort, serverHost, onLog = () => {}, killSw
     }
   } else {
     const service = await primaryService().catch(() => ""); // for IPv6 leak control (may be "")
-    fs.writeFileSync(SESSION_SH, sessionScript({ dev, socksPort, serverIp, dnsIps, service, ownerPid: process.pid, killSwitch, dnsTunnel, dnsPort }));
+    fs.writeFileSync(SESSION_SH, sessionScript({ dev, socksPort, serverIp, dnsIps, service, ownerPid: process.pid, killSwitch, dnsTunnel, dnsNode: process.execPath, dnsScript: DNS_SCRIPT }));
     // No nohup: under `do shell script … with administrator privileges` there's no controlling
     // terminal, so nohup errors ("can't detach from console"). Redirecting all three fds and
     // backgrounding detaches it cleanly; with no tty there's no SIGHUP to survive, and the job

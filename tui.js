@@ -689,7 +689,9 @@ async function toggleTun() {
   state.busy = true; state.busyText = "starting full tunnel…"; draw();
   try {
     const host = new URL(state.workerUrl).host;
-    if (state.dnsTunnel) { try { dnsFwd && dnsFwd.close(); } catch {} dnsFwd = startDnsForwarder({ socksPort: state.socksPort, port: DNS_PORT, quiet: true }); }
+    // Linux redirects :53 to an in-app forwarder; macOS runs the forwarder on :53 inside the root
+    // session (privileged port) and points system DNS at it - so only start the app one on Linux.
+    if (state.dnsTunnel && process.platform === "linux") { try { dnsFwd && dnsFwd.close(); } catch {} dnsFwd = startDnsForwarder({ socksPort: state.socksPort, port: DNS_PORT, quiet: true }); }
     await tun.startTun({ socksPort: state.socksPort, serverHost: host, killSwitch, dnsTunnel: state.dnsTunnel, dnsPort: DNS_PORT, onLog: (m) => { state.busyText = m; draw(); } });
     state.tunActive = true; state.tunKillSwitch = killSwitch; state.tunDns = state.dnsTunnel; state.busy = false;
     saveConfig({ killSwitch });
