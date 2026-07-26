@@ -13,3 +13,9 @@ NOTES.md
 
 # asciinema raw recordings (keep local; the rendered gif is committed)
 *.cast
+
+# local API token, never commit
+fizzytoken.txt
+
+# raw screenshots (the committed one is assets/tui.png)
+CleanShot*.png
