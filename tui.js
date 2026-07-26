@@ -897,11 +897,18 @@ async function machines() {
   const n = Number(ans);
   if (Number.isInteger(n) && n >= 1 && n <= list.length) {
     const m = list[n - 1];
-    state.workerUrl = m.workerUrl || ""; state.uuid = m.uuid || "";
-    saveConfig({ workerUrl: state.workerUrl, uuid: state.uuid });
+    adoptMachine(m);
     return setMsg(A.green + `Switched to ${m.desc || "that machine"}.` + A.reset + ` ${A.dim}Press c to connect.${A.reset}`);
   }
   return setMsg(A.red + "Didn't recognize that - type a number, or s / f / e / i / dN." + A.reset);
+}
+
+// Make a saved machine the active one: adopt its endpoint + key, plus its SSH creds if it has them.
+// Older saved machines predate per-machine creds, so keep the current creds when a field is absent.
+function adoptMachine(m) {
+  state.workerUrl = m.workerUrl || ""; state.uuid = m.uuid || "";
+  for (const f of ["vpsHost", "vpsUser", "vpsKey", "vpsDomain"]) if (m[f] != null) state[f] = m[f];
+  saveConfig({ workerUrl: state.workerUrl, uuid: state.uuid, vpsHost: state.vpsHost, vpsUser: state.vpsUser, vpsKey: state.vpsKey, vpsDomain: state.vpsDomain });
 }
 
 async function saveMachine() {
@@ -910,7 +917,8 @@ async function saveMachine() {
   }
   const desc = (await promptLine("Name this machine (e.g. home VM, demo)", "")).trim();
   const list = Array.isArray(state.machines) ? state.machines.slice() : [];
-  const entry = { desc: desc || "(no description)", workerUrl: state.workerUrl, uuid: state.uuid };
+  const entry = { desc: desc || "(no description)", workerUrl: state.workerUrl, uuid: state.uuid,
+    vpsHost: state.vpsHost, vpsUser: state.vpsUser, vpsKey: state.vpsKey, vpsDomain: state.vpsDomain };
   const idx = list.findIndex((m) => m.workerUrl === entry.workerUrl && m.uuid === entry.uuid);
   if (idx >= 0) list[idx] = entry; else list.push(entry);          // update in place if already saved
   state.machines = list; saveConfig({ machines: list });
@@ -980,8 +988,7 @@ async function connectFastest() {
   state.busy = false;
   const best = pickFastest(results);
   if (!best) { draw(); return setMsg(A.red + "None of your saved servers responded - check they're set up." + A.reset); }
-  state.workerUrl = best.m.workerUrl; state.uuid = best.m.uuid;
-  saveConfig({ workerUrl: state.workerUrl, uuid: state.uuid });
+  adoptMachine(best.m);
   const rest = results.filter((r) => r.ms != null && r !== best).sort((a, b) => a.ms - b.ms)
     .map((r) => `${r.m.desc} ${r.ms}ms`).join(", ");
   setMsg(A.green + `Fastest: ${best.m.desc} at ${best.ms} ms.` + A.reset + (rest ? ` ${A.dim}(${rest})${A.reset}` : "") + ` ${A.dim}Connecting…${A.reset}`);
