@@ -63,7 +63,7 @@ working.
 |---|---|
 | **s** | First-time setup - provisions your server |
 | **c** | Connect / disconnect |
-| **e** | Connection details - set server / key, or paste a `vless://` link |
+| **e** | Connection details - server / key, paste a link, auto-connect toggle |
 | **t** | Test the connection (shows the live exit IP) |
 | **g** | Generate a new access key |
 | **x** | Share this config as a QR code |
@@ -84,6 +84,10 @@ recovers - no manual reconnect needed.
 
 The panel also shows **live traffic** while connected - up/down speed, total data this session,
 and a **ping + signal bar** to your server, refreshed every second.
+
+On launch it quietly checks for a newer release and shows a one-line nudge if there is one (turn it
+off with `COLLATERAL_NO_UPDATE_CHECK=1`). Turn on **auto-connect on launch** in connection details
+(**e**) to have it connect the moment it opens.
 
 ---
 

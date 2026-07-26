@@ -15,7 +15,7 @@ import { parseSocksUdp } from "./client.js";
 import { qrMatrix } from "./common/qr.js";
 import { vlessUriFromConfig, parseVlessUri } from "./common/config.js";
 import { FrameParser, encodeFrame, OPCODES } from "./common/ws-frame.js";
-import { renderFrame, hitTest, fmtBytes, latLevel, pickFastest, mergeBy, buildBackup, planImport } from "./tui.js";
+import { renderFrame, hitTest, fmtBytes, latLevel, pickFastest, mergeBy, buildBackup, planImport, semverGt } from "./tui.js";
 import { parseEndpoint } from "./common/doctor.js";
 import { parseKeys } from "./worker-shim.js";
 import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun, parseLinuxDefaultRoute, parseResolvConf, parseResolvectl, firstFreeTun, pfKillSwitchRules, iptablesKillSwitchSetup, iptablesKillSwitchTeardown } from "./common/tun.js";
@@ -181,6 +181,14 @@ test("TUI: fmtBytes scales units and rounds sensibly", () => {
   assert.equal(fmtBytes(1024 * 1024), "1.0 MB");
   assert.equal(fmtBytes(20 * 1024 * 1024), "20 MB");   // >= 10 drops the decimal
   assert.equal(fmtBytes(undefined), "0 B");            // no traffic yet
+});
+
+test("TUI: semverGt compares dotted versions for the update nudge", () => {
+  assert.equal(semverGt("0.8.0", "0.7.0"), true);
+  assert.equal(semverGt("0.7.1", "0.7.0"), true);
+  assert.equal(semverGt("1.0.0", "0.9.9"), true);
+  assert.equal(semverGt("0.7.0", "0.7.0"), false);   // equal is not newer
+  assert.equal(semverGt("0.6.9", "0.7.0"), false);
 });
 
 test("TUI: mergeBy folds in new items and skips existing keys (backup import)", () => {

@@ -58,6 +58,10 @@ const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "�
 const SEP = "\x00sep\x00"; // sentinel: a separator row
 const w = (s) => process.stdout.write(s);
 
+// Our own version, for the update check (best-effort; a missing file just disables it).
+let PKG_VERSION = "0.0.0";
+try { PKG_VERSION = JSON.parse(fs.readFileSync(new URL("./package.json", import.meta.url), "utf8")).version || PKG_VERSION; } catch {}
+
 const state = { ...loadConfig(), connected: false, reconnecting: false, socksPort: null, exitIP: null, busy: false, busyText: "", view: "main", hover: null, systemProxy: false, tunActive: false, netService: null, msg: "Set your server + key, then press c to connect." };
 let socks = null, spinI = 0, inPrompt = false, renderTimer = null, lastBuilt = null, quitting = false;
 let healthTimer = null, healthFails = 0;
@@ -209,6 +213,7 @@ function buildBox(s) {
   const gap = Math.max(1, innerW - visLen(brand) - visLen(statusWord));
   body.push(brand + " ".repeat(gap) + statusWord);
   body.push(`${A.dim}your own private proxy${A.reset}`);
+  if (s.updateAvailable) body.push(`${A.amber}update available: ${s.updateAvailable}${A.reset}${A.dim} · npx getcollateral@latest${A.reset}`);
 
   const row = (label, val) => `${A.muted}${label.padEnd(9)}${A.reset}  ${val}`;
   const none = A.dim + "-" + A.reset;
@@ -879,6 +884,14 @@ export function planImport(cur, imp) {
   return { patch, addedMachines: m.added, addedFriends: fr.added };
 }
 
+// Compare dotted versions: is a strictly newer than b? Pure -> unit-testable.
+export function semverGt(a, b) {
+  const pa = String(a).split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) { if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0); }
+  return false;
+}
+
 // Ping every saved machine and connect to the lowest-latency one. Reuses the same TCP probe that
 // feeds the live ping row; the closest / least-loaded endpoint usually wins.
 async function connectFastest() {
@@ -949,6 +962,8 @@ async function details() {
     `${A.amber}u${A.reset} set access key`,
     ...(scanSupported() ? [`${A.amber}s${A.reset} scan a QR with the camera`] : []),
     ``,
+    `${A.amber}a${A.reset} auto-connect on launch: ${state.autoConnect ? A.green + "on" + A.reset : A.muted + "off" + A.reset}`,
+    ``,
     `${A.dim}enter to go back${A.reset}`,
   ];
   const ans = (await promptStart(lines, "")).trim().toLowerCase();
@@ -956,6 +971,7 @@ async function details() {
   if (ans === "w") return setServer();
   if (ans === "u") return setKey();
   if (ans === "s" && scanSupported()) return importFromCamera();
+  if (ans === "a") { state.autoConnect = !state.autoConnect; saveConfig({ autoConnect: state.autoConnect }); return setMsg(state.autoConnect ? A.green + "Auto-connect on launch is ON." + A.reset : "Auto-connect on launch is off."); }
   return draw(); // enter / anything else -> back to main
 }
 
@@ -1154,6 +1170,17 @@ async function quit() {
   process.exit(0);
 }
 
+// Quiet check for a newer published version; a one-line nudge if there is one. Never blocks or throws.
+async function checkForUpdate() {
+  if (process.env.COLLATERAL_NO_UPDATE_CHECK || isDemo()) return;
+  try {
+    const res = await fetch("https://registry.npmjs.org/getcollateral/latest", { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data && data.version && semverGt(data.version, PKG_VERSION)) { state.updateAvailable = data.version; draw(); }
+  } catch { /* offline / registry down - stay silent */ }
+}
+
 function main() {
   if (!process.stdin.isTTY) {
     process.stdout.write(renderFrame(state) + "\n\n  (interactive controls need a real terminal, run: node tui.js)\n");
@@ -1186,6 +1213,8 @@ function main() {
     }
     draw();
   })();
+  checkForUpdate();
+  if (state.autoConnect && !isDemo() && isWsUrl(state.workerUrl) && isUuid(state.uuid)) connect();
 }
 
 // Run main() when this file IS the entry point. Resolve symlinks on both sides - when launched
