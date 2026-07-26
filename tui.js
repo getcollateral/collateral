@@ -11,6 +11,7 @@ import readline from "node:readline";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { startClient } from "./client.js";
 import { getExitIP } from "./common/probe.js";
@@ -311,7 +312,8 @@ function buildShare(s) {
   const qr = qrToTerminal(uri, { ecl: "L", quiet: 2 }).replace(/\n$/, "").split("\n");
   const note = qrTerminalNote(Math.max(...qr.map(visLen)), cols);
   // Back-hint lives in the title so it's visible even if the QR is taller than the terminal.
-  const lines = [`${markStr(s)} ${A.bold}collateral${A.reset}${A.amber}_${A.reset}  ${A.dim}share this config · press any key to go back${A.reset}`, ``];
+  const hint = s.shareCopied ? `${A.green}link copied ✓${A.reset}` : `${A.dim}c copy link · any key to go back${A.reset}`;
+  const lines = [`${markStr(s)} ${A.bold}collateral${A.reset}${A.amber}_${A.reset}  ${hint}`, ``];
   if (note) {
     const c = note.tone === "warn" ? A.amber : A.dim;
     lines.push(...wrapAnsi(`${c}${note.tone === "note" ? "note: " : ""}${note.text}${A.reset}`, Math.min(cols - 2, 76)), ``);
@@ -325,12 +327,33 @@ function buildShare(s) {
   return lines;
 }
 
+// Copy text to the clipboard. The TUI's raw mode + mouse lock means you can't select text, so this
+// is the only way to get the link out. Uses the OS tool when present, plus an OSC 52 escape (which
+// many terminals honor even over SSH), so at least one usually lands.
+function copyToClipboard(text) {
+  try { process.stdout.write(`\x1b]52;c;${Buffer.from(text || "").toString("base64")}\x07`); } catch {}
+  const cmds = process.platform === "darwin" ? [["pbcopy"]]
+    : process.platform === "win32" ? [["clip"]]
+    : [["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]];
+  for (const [cmd, ...args] of cmds) {
+    try { const r = spawnSync(cmd, args, { input: text || "" }); if (!r.error && r.status === 0) return true; } catch {}
+  }
+  return false;
+}
+
+function copyShare() {
+  copyToClipboard(state.shareUri || "");
+  state.shareCopied = true;
+  draw();
+}
+
 function shareConfig() {
   if (!isWsUrl(state.workerUrl) || !isUuid(state.uuid)) {
     return setMsg(A.red + "Nothing to share yet: set a server + key, or run setup (s)." + A.reset);
   }
   try { state.shareUri = vlessUriFromConfig({ workerUrl: state.workerUrl, uuid: state.uuid }); }
   catch (e) { return setMsg(A.red + `Couldn't build the share link: ${e.message || e}` + A.reset); }
+  state.shareCopied = false;
   state.view = "share";
   draw();
 }
@@ -787,7 +810,7 @@ async function addFriend() {
     state.friends = list; saveConfig({ friends: list });
     state.busy = false;
     state.shareUri = vlessUriFromConfig({ workerUrl: state.workerUrl, uuid }); // hand the friend THEIR config
-    state.view = "share"; draw();
+    state.shareCopied = false; state.view = "share"; draw();
     setMsg(A.green + `Added ${label || "friend"}. Send them this QR / link (any key to go back).` + A.reset);
   } catch (e) {
     state.busy = false;
@@ -853,6 +876,7 @@ function keyHandler(str) {
   const k = str.length === 1 ? str.toLowerCase() : "";
   if (k === "q") return quit();                 // quit works even mid-connect/setup
   if (!k) { if (events.length) return; return draw(); } // no key: mouse-only chunk, or re-sync
+  if (state.view === "share" && k === "c") return copyShare();
   if (state.view === "help" || state.view === "share") { state.view = "main"; return draw(); }
   if (state.busy) return;
   handleKey(k);
