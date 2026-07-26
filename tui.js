@@ -1116,18 +1116,25 @@ function showFriend(i) {
   draw();
 }
 
+// Friends live on the server your link points at (workerUrl), which - with saved machines /
+// fastest-pick - can differ from the box you first set up (vpsHost). SSH to the link's host so the
+// key lands where the friend actually connects. (SSH creds stay the shared vpsUser/vpsKey.)
+function friendSshHost() {
+  try { return new URL(state.workerUrl).hostname; } catch { return state.vpsHost; }
+}
+
 async function addFriend() {
   const label = (await promptLine("Friend's name (e.g. alice)", "")).trim();
   const uuid = crypto.randomUUID();
   state.busy = true; state.busyText = "adding their key to your server…"; draw();
   try {
-    await addKey({ host: state.vpsHost, user: state.vpsUser || "ubuntu", keyPath: expandKey(state.vpsKey), uuid });
+    await addKey({ host: friendSshHost(), user: state.vpsUser || "ubuntu", keyPath: expandKey(state.vpsKey), uuid });
     const list = [...(Array.isArray(state.friends) ? state.friends : []), { label: label || "(friend)", uuid }];
     state.friends = list; saveConfig({ friends: list });
     state.busy = false;
     state.shareUri = vlessUriFromConfig({ workerUrl: state.workerUrl, uuid }); // hand the friend THEIR config
     state.shareCopied = false; state.view = "share"; draw();
-    setMsg(A.green + `Added ${label || "friend"}. Send them this QR / link (any key to go back).` + A.reset);
+    setMsg(A.green + `Added ${label || "friend"} on ${friendSshHost()}. Send them this QR / link (any key to go back).` + A.reset);
   } catch (e) {
     state.busy = false;
     setMsg(A.red + `Couldn't add friend: ${String(e.message || e).split("\n").pop()}` + A.reset);
@@ -1140,7 +1147,7 @@ async function revokeFriend(i) {
   const f = list[i];
   state.busy = true; state.busyText = "revoking on your server…"; draw();
   try {
-    await removeKey({ host: state.vpsHost, user: state.vpsUser || "ubuntu", keyPath: expandKey(state.vpsKey), uuid: f.uuid });
+    await removeKey({ host: friendSshHost(), user: state.vpsUser || "ubuntu", keyPath: expandKey(state.vpsKey), uuid: f.uuid });
     list.splice(i, 1); state.friends = list; saveConfig({ friends: list });
     state.busy = false;
     setMsg(A.green + `Revoked ${f.label || "friend"} - their key no longer works.` + A.reset);
