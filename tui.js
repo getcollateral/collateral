@@ -11,6 +11,7 @@ import readline from "node:readline";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
+import net from "node:net";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { startClient } from "./client.js";
@@ -217,6 +218,10 @@ function buildBox(s) {
     row("key", s.uuid ? ellip(s.uuid, vw) : A.dim + "(not set, press u or g)" + A.reset),
     row("exit ip", s.exitIP ? A.teal + s.exitIP + A.reset : none),
     row("transport", `${A.dim}VLESS · WebSocket · TLS · :443${A.reset}`),
+    ...(s.connected ? [
+      row("traffic", `${A.green}↓${A.reset} ${fmtRate(s.downRate)}   ${A.teal}↑${A.reset} ${fmtRate(s.upRate)}   ${A.dim}${fmtBytes(s.totalBytes)}${A.reset}`),
+      row("ping", s.latency != null ? `${latColor(s.latency)}${s.latency} ms${A.reset}  ${latBar(s.latency)}` : `${A.dim}measuring…${A.reset}`),
+    ] : []),
     SEP,
   );
 
@@ -246,6 +251,28 @@ function buildBox(s) {
 }
 
 export function renderFrame(s) { return buildBox(s).lines.join("\n"); }
+
+// Human-readable formatting for the live stats rows. Pure, so they're unit-testable.
+export function fmtBytes(n) {
+  n = n || 0;
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return `${i === 0 ? Math.round(n) : n.toFixed(n < 10 ? 1 : 0)} ${u[i]}`;
+}
+function fmtRate(bps) { return fmtBytes(bps) + "/s"; }
+function latColor(ms) { return ms == null ? A.dim : ms < 90 ? A.green : ms < 180 ? A.amber : A.red; }
+// Signal level 0-4: more bars = lower latency (null = no reading yet).
+export function latLevel(ms) { return ms == null ? 0 : ms < 40 ? 4 : ms < 90 ? 3 : ms < 180 ? 2 : 1; }
+// A 4-glyph signal bar: more bars + greener = lower latency.
+function latBar(ms) {
+  const lvl = latLevel(ms);
+  const col = lvl >= 3 ? A.green : lvl === 2 ? A.amber : A.red;
+  const g = "▁▃▅▇";
+  let out = "";
+  for (let i = 0; i < 4; i++) out += (i < lvl ? col : A.dim) + g[i] + A.reset;
+  return out;
+}
 
 // Map a click at 1-based terminal (X, Y) to a zone's key, accounting for the centered
 // layout. Pure, so it's unit-testable without a terminal.
@@ -396,6 +423,7 @@ async function connect() {
     await sleep(800);
     state.socksPort = 1080; state.exitIP = DEMO_EXIT_IP;
     state.connected = true; state.reconnecting = false; state.busy = false;
+    startStats();
     return setMsg(A.green + `Connected, traffic exits via ${DEMO_EXIT_IP}.` + A.reset);
   }
   state.busy = true; state.busyText = "connecting…"; draw();
@@ -408,6 +436,7 @@ async function connect() {
     const ip = await getExitIP(state.socksPort);
     state.exitIP = ip; state.connected = true; state.reconnecting = false; state.busy = false;
     startHealthMonitor();
+    startStats();
     setMsg(A.green + `Connected, traffic exits via ${ip}.` + A.reset);
   } catch (e) {
     const revoked = !!(socks && socks.authRejected);
@@ -425,6 +454,7 @@ async function disconnect() {
     state.tunActive = false; state.systemProxy = false;
     state.connected = false; state.reconnecting = false; state.socksPort = null; state.exitIP = null;
     stopHealthMonitor();
+    stopStats();
     return setMsg("Disconnected.");
   }
   // Turn off device-wide capture FIRST - leaving the system proxy or the TUN pointed at a dead
@@ -440,6 +470,7 @@ async function disconnect() {
     state.systemProxy = false; state.busy = false;
   }
   stopHealthMonitor();
+  stopStats();
   if (socks) { try { socks.close(); } catch {} }
   socks = null; state.connected = false; state.reconnecting = false; state.socksPort = null; state.exitIP = null;
   setMsg("Disconnected.");
@@ -474,6 +505,62 @@ async function healthTick() {
     if (healthFails >= 2 && !state.reconnecting) { state.reconnecting = true; setMsg(A.amber + "Tunnel unreachable, reconnecting automatically…" + A.reset); }
     scheduleHealth(healthFails >= 2 ? Math.min(8000, HEALTH_OK_MS) : Math.min(4000, HEALTH_OK_MS));
   }
+}
+
+// Live throughput + latency. Samples the client's byte counters each second to derive up/down
+// rates, and TCP-pings the server every ~5s for a round-trip reading. Only repaints in the main
+// view (nothing there scrolls), so scroll-lock in the QR/help views is preserved.
+let statsTimer = null, prevUp = 0, prevDown = 0, prevAt = 0, pingN = 0;
+function startStats() {
+  prevUp = (socks && socks.bytesUp) || 0;
+  prevDown = (socks && socks.bytesDown) || 0;
+  prevAt = Date.now();
+  pingN = 0;
+  state.upRate = 0; state.downRate = 0; state.totalBytes = 0; state.latency = null;
+  if (statsTimer) clearInterval(statsTimer);
+  statsTimer = setInterval(statsTick, 1000);
+  if (!isDemo()) pingServer(); // first reading right away
+}
+function stopStats() {
+  if (statsTimer) { clearInterval(statsTimer); statsTimer = null; }
+  state.upRate = 0; state.downRate = 0; state.totalBytes = 0; state.latency = null;
+}
+function statsTick() {
+  if (!state.connected) return;
+  if (isDemo()) { // recording mode: plausible fluctuating numbers so it feels alive
+    state.downRate = 900e3 + Math.random() * 1600e3;
+    state.upRate = 60e3 + Math.random() * 180e3;
+    state.totalBytes = (state.totalBytes || 0) + state.downRate + state.upRate;
+    state.latency = 18 + Math.round(Math.random() * 12);
+  } else {
+    if (!socks) return;
+    const now = Date.now();
+    const up = socks.bytesUp || 0, down = socks.bytesDown || 0;
+    const dt = Math.max(0.001, (now - prevAt) / 1000);
+    state.upRate = Math.max(0, (up - prevUp) / dt);
+    state.downRate = Math.max(0, (down - prevDown) / dt);
+    state.totalBytes = up + down;
+    prevUp = up; prevDown = down; prevAt = now;
+    if (++pingN % 5 === 0) pingServer(); // re-ping every ~5s
+  }
+  if (state.view === "main" && !inPrompt && !state.busy) draw(); // main view has nothing to scroll
+}
+// TCP round-trip to the server as a lightweight latency probe (no tunnel overhead).
+function pingServer() {
+  let host, port;
+  try {
+    const u = new URL(state.workerUrl);
+    host = u.hostname;
+    port = Number(u.port) || (u.protocol === "wss:" ? 443 : 80);
+  } catch { state.latency = null; return; }
+  const t0 = Date.now();
+  const s = net.connect({ host, port });
+  let done = false;
+  const finish = (val) => { if (done) return; done = true; state.latency = val; try { s.destroy(); } catch {} };
+  s.setTimeout(3000);
+  s.once("connect", () => finish(Date.now() - t0));
+  s.once("timeout", () => finish(null));
+  s.once("error", () => finish(null));
 }
 
 // Full-tunnel (TUN): true device-wide capture of all TCP via a utun, using our existing tunnel.
@@ -925,6 +1012,7 @@ function cleanup() {
   if (cleaned) return; cleaned = true;
   if (renderTimer) clearInterval(renderTimer);
   stopHealthMonitor();
+  stopStats();
   // Signal the root TUN session to tear down (restores routing). Synchronous file touch, safe
   // here; the session also self-heals via its owner-PID watchdog if this never runs.
   if (state.tunActive && !isDemo()) tun.requestStopSync();

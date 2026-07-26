@@ -47,6 +47,8 @@ export function startClient({ socksPort = 1080, host = "127.0.0.1", workerUrl, u
     });
   });
 
+  server.bytesUp = 0; server.bytesDown = 0; // live throughput counters, read by the TUI
+
   // SOCKS5: negotiate no-auth, then read the request (CONNECT=1 for TCP, UDP ASSOCIATE=3).
   function socks5(sock, greeting) {
     sock.write(Buffer.from([0x05, 0x00])); // version 5, no auth
@@ -98,11 +100,12 @@ export function startClient({ socksPort = 1080, host = "127.0.0.1", workerUrl, u
     let wsOpen = false;
     let respParsed = false;
     const buffered = [];
-    if (extra && extra.length) buffered.push(extra);
+    if (extra && extra.length) { server.bytesUp += extra.length; buffered.push(extra); }
 
     // Buffer app bytes until the WebSocket is open so nothing is lost in the race
     // between the SOCKS success reply and the ws handshake.
     sock.on("data", (d) => {
+      server.bytesUp += d.length;
       if (wsOpen && ws.readyState === 1) ws.send(d);
       else buffered.push(d);
     });
@@ -123,7 +126,7 @@ export function startClient({ socksPort = 1080, host = "127.0.0.1", workerUrl, u
         respParsed = true;
         server.authRejected = false; // got a VLESS response -> the key is accepted
       }
-      if (buf.length) sock.write(buf);
+      if (buf.length) { server.bytesDown += buf.length; sock.write(buf); }
     };
     ws.onclose = (ev) => {
       const code = ev && ev.code;
@@ -183,6 +186,7 @@ export function startClient({ socksPort = 1080, host = "127.0.0.1", workerUrl, u
         s = { hdrPrefix: p.hdrPrefix, app: rinfo, idle: null };
         s.bump = () => { clearTimeout(s.idle); s.idle = setTimeout(() => { try { s.session.close(); } catch {} sessions.delete(key); }, 60000); };
         s.session = openUdpSession(p.host, p.port, (datagram) => {
+          server.bytesDown += datagram.length;
           try { relay.send(Buffer.concat([s.hdrPrefix, datagram]), s.app.port, s.app.address); } catch {}
           s.bump();
         });
@@ -190,6 +194,7 @@ export function startClient({ socksPort = 1080, host = "127.0.0.1", workerUrl, u
       }
       s.app = rinfo;      // reply to wherever the app last sent from
       s.bump();
+      server.bytesUp += p.data.length;
       s.session.send(p.data);
     });
     relay.bind(0, "127.0.0.1", () => {

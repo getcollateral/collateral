@@ -80,6 +80,9 @@ While connected, a background health check keeps the status honest: if the serve
 unreachable it shows **reconnecting…** and flips back to **connected** on its own when it
 recovers - no manual reconnect needed.
 
+The panel also shows **live traffic** while connected - up/down speed, total data this session,
+and a **ping + signal bar** to your server, refreshed every second.
+
 ---
 
 ## Route your whole device (macOS & Linux)

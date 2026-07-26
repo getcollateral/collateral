@@ -15,7 +15,7 @@ import { parseSocksUdp } from "./client.js";
 import { qrMatrix } from "./common/qr.js";
 import { vlessUriFromConfig, parseVlessUri } from "./common/config.js";
 import { FrameParser, encodeFrame, OPCODES } from "./common/ws-frame.js";
-import { renderFrame, hitTest } from "./tui.js";
+import { renderFrame, hitTest, fmtBytes, latLevel } from "./tui.js";
 import { parseEndpoint } from "./common/doctor.js";
 import { parseKeys } from "./worker-shim.js";
 import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun, parseLinuxDefaultRoute, parseResolvConf, parseResolvectl, firstFreeTun } from "./common/tun.js";
@@ -171,6 +171,32 @@ test("TUI: connected frame shows the proxy address and endpoint", () => {
   assert.match(f, /c {2}disconnect/);
   assert.match(f, /wss:\/\/1\.2\.3\.4\.sslip\.io/);
   assert.match(f, /1\.2\.3\.4/);
+});
+
+test("TUI: fmtBytes scales units and rounds sensibly", () => {
+  assert.equal(fmtBytes(0), "0 B");
+  assert.equal(fmtBytes(512), "512 B");
+  assert.equal(fmtBytes(1024), "1.0 KB");
+  assert.equal(fmtBytes(1536), "1.5 KB");
+  assert.equal(fmtBytes(1024 * 1024), "1.0 MB");
+  assert.equal(fmtBytes(20 * 1024 * 1024), "20 MB");   // >= 10 drops the decimal
+  assert.equal(fmtBytes(undefined), "0 B");            // no traffic yet
+});
+
+test("TUI: latLevel maps latency to signal-bar levels (null = none)", () => {
+  assert.equal(latLevel(null), 0);
+  assert.equal(latLevel(20), 4);
+  assert.equal(latLevel(60), 3);
+  assert.equal(latLevel(120), 2);
+  assert.equal(latLevel(300), 1);
+});
+
+test("TUI: connected frame shows the live traffic + ping rows", () => {
+  const f = strip(renderFrame({ view: "main", connected: true, socksPort: 1080, workerUrl: "wss://x/y", uuid: "u", exitIP: "1.2.3.4", downRate: 1024 * 1024, upRate: 2048, totalBytes: 5 * 1024 * 1024, latency: 24, msg: "" }));
+  assert.match(f, /traffic/);
+  assert.match(f, /1\.0 MB\/s/);   // down rate formatted
+  assert.match(f, /ping/);
+  assert.match(f, /24 ms/);
 });
 
 test("QR: correct size + valid finder patterns at all three corners", () => {
