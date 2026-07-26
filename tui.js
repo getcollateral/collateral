@@ -791,13 +791,26 @@ async function friends() {
     list.forEach((f, i) => lines.push(`  ${A.amber}${i + 1}${A.reset}  ${A.bold}${f.label || "(friend)"}${A.reset}  ${A.dim}${ellip(f.uuid || "", 20)}${A.reset}`));
     lines.push(``);
   }
-  lines.push(`${A.amber}a${A.reset} add a friend${list.length ? ` · ${A.amber}rN${A.reset} revoke #N` : ""} · ${A.dim}enter cancels${A.reset}`);
+  lines.push(`${A.amber}a${A.reset} add${list.length ? ` · ${A.amber}N${A.reset} show/copy · ${A.amber}rN${A.reset} revoke` : ""} · ${A.dim}enter cancels${A.reset}`);
   const ans = (await promptStart(lines, "")).trim().toLowerCase();
   if (!ans) return setMsg("Cancelled.");
   if (ans === "a") return addFriend();
   const rev = /^r\s*0*(\d+)$/.exec(ans);
   if (rev) return revokeFriend(Number(rev[1]) - 1);
-  return setMsg(A.red + "Didn't recognize that - type a, or rN." + A.reset);
+  const num = Number(ans);
+  if (Number.isInteger(num) && num >= 1 && num <= list.length) return showFriend(num - 1);
+  return setMsg(A.red + "Didn't recognize that - a add, N show, rN revoke." + A.reset);
+}
+
+// Re-display a friend's config (their key + your endpoint) as a QR/link to re-send or re-copy.
+function showFriend(i) {
+  const f = (Array.isArray(state.friends) ? state.friends : [])[i];
+  if (!f) return setMsg(A.red + "No friend with that number." + A.reset);
+  try { state.shareUri = vlessUriFromConfig({ workerUrl: state.workerUrl, uuid: f.uuid }); }
+  catch (e) { return setMsg(A.red + `Couldn't build the link: ${e.message || e}` + A.reset); }
+  state.shareCopied = false;
+  state.view = "share";
+  draw();
 }
 
 async function addFriend() {
