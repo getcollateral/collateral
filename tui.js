@@ -16,6 +16,7 @@ import path from "node:path";
 import { spawnSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { startClient } from "./client.js";
+import { startDnsForwarder } from "./common/dns.js";
 import { getExitIP } from "./common/probe.js";
 import { loadConfig, saveConfig } from "./common/store.js";
 import { provisionVps, addKey, removeKey } from "./provision/vps.js";
@@ -64,6 +65,8 @@ try { PKG_VERSION = JSON.parse(fs.readFileSync(new URL("./package.json", import.
 
 const state = { ...loadConfig(), connected: false, reconnecting: false, socksPort: null, exitIP: null, busy: false, busyText: "", view: "main", hover: null, systemProxy: false, tunActive: false, netService: null, msg: "Set your server + key, then press c to connect." };
 let socks = null, spinI = 0, inPrompt = false, renderTimer = null, lastBuilt = null, quitting = false;
+let dnsFwd = null;            // the DNS-through-tunnel forwarder, when active
+const DNS_PORT = 5353;       // local forwarder port; the tun session redirects :53 here
 let healthTimer = null, healthFails = 0;
 const HEALTH_OK_MS = Number(process.env.COLLATERAL_HEALTH_MS) || 30000; // healthy poll interval (test knob)
 
@@ -294,6 +297,7 @@ function buildBox(s) {
       row("ping", s.latency != null ? `${latColor(s.latency)}${s.latency} ms${A.reset}  ${latBar(s.latency)}` : `${A.dim}measuring…${A.reset}`),
     ] : []),
     ...(s.tunActive && s.tunKillSwitch ? [row("kill switch", `${A.amber}armed${A.reset} ${A.dim}- blocks traffic if the tunnel drops${A.reset}`)] : []),
+    ...(s.tunActive && s.tunDns ? [row("dns", `${A.teal}tunnelled${A.reset} ${A.dim}- no plaintext DNS leak${A.reset}`)] : []),
     SEP,
   );
 
@@ -534,7 +538,8 @@ async function disconnect() {
   if (state.tunActive) {
     state.busy = true; state.busyText = "turning off full tunnel…"; draw();
     try { await tun.stopTun(); } catch {}
-    state.tunActive = false; state.tunKillSwitch = false; state.busy = false;
+    try { dnsFwd && dnsFwd.close(); } catch {} dnsFwd = null;
+    state.tunActive = false; state.tunKillSwitch = false; state.tunDns = false; state.busy = false;
   }
   if (state.systemProxy && state.netService) {
     state.busy = true; state.busyText = "turning off system proxy…"; draw();
@@ -659,7 +664,8 @@ async function toggleTun() {
   if (state.tunActive) {
     state.busy = true; state.busyText = "turning off full tunnel…"; draw();
     const ok = await tun.stopTun();
-    state.tunActive = false; state.tunKillSwitch = false; state.busy = false;
+    try { dnsFwd && dnsFwd.close(); } catch {} dnsFwd = null;
+    state.tunActive = false; state.tunKillSwitch = false; state.tunDns = false; state.busy = false;
     return setMsg(ok ? "Full tunnel off, networking restored." : A.red + "Couldn't confirm teardown. Check `node common/tun.js status`." + A.reset);
   }
   if (!state.connected) return setMsg(A.red + "Connect first. The full tunnel routes every app through the tunnel." + A.reset);
@@ -683,14 +689,16 @@ async function toggleTun() {
   state.busy = true; state.busyText = "starting full tunnel…"; draw();
   try {
     const host = new URL(state.workerUrl).host;
-    await tun.startTun({ socksPort: state.socksPort, serverHost: host, killSwitch, onLog: (m) => { state.busyText = m; draw(); } });
-    state.tunActive = true; state.tunKillSwitch = killSwitch; state.busy = false;
+    if (state.dnsTunnel) { try { dnsFwd && dnsFwd.close(); } catch {} dnsFwd = startDnsForwarder({ socksPort: state.socksPort, port: DNS_PORT, quiet: true }); }
+    await tun.startTun({ socksPort: state.socksPort, serverHost: host, killSwitch, dnsTunnel: state.dnsTunnel, dnsPort: DNS_PORT, onLog: (m) => { state.busyText = m; draw(); } });
+    state.tunActive = true; state.tunKillSwitch = killSwitch; state.tunDns = state.dnsTunnel; state.busy = false;
     saveConfig({ killSwitch });
     setMsg(A.green + (killSwitch
       ? "Full tunnel ON, kill switch armed - if the tunnel drops, traffic is blocked (no leak)."
-      : "Full tunnel ON, every app's TCP now routes through the server.") + A.reset + `  ${A.dim}(press f to turn off)${A.reset}`);
+      : "Full tunnel ON, every app's TCP now routes through the server.") + (state.dnsTunnel ? " DNS is tunnelled too." : "") + A.reset + `  ${A.dim}(press f to turn off)${A.reset}`);
   } catch (e) {
-    state.tunActive = false; state.tunKillSwitch = false; state.busy = false;
+    try { dnsFwd && dnsFwd.close(); } catch {} dnsFwd = null;
+    state.tunActive = false; state.tunKillSwitch = false; state.tunDns = false; state.busy = false;
     setMsg(A.red + `Full tunnel failed: ${e.message || e}` + A.reset);
   }
 }
@@ -1030,6 +1038,7 @@ async function details() {
     ...(scanSupported() ? [`${A.amber}s${A.reset} scan a QR with the camera`] : []),
     ``,
     `${A.amber}a${A.reset} auto-connect on launch: ${state.autoConnect ? A.green + "on" + A.reset : A.muted + "off" + A.reset}`,
+    `${A.amber}d${A.reset} tunnel DNS (full tunnel only): ${state.dnsTunnel ? A.green + "on" + A.reset : A.muted + "off" + A.reset}`,
     ``,
     `${A.dim}enter to go back${A.reset}`,
   ];
@@ -1039,6 +1048,7 @@ async function details() {
   if (ans === "u") return setKey();
   if (ans === "s" && scanSupported()) return importFromCamera();
   if (ans === "a") { state.autoConnect = !state.autoConnect; saveConfig({ autoConnect: state.autoConnect }); return setMsg(state.autoConnect ? A.green + "Auto-connect on launch is ON." + A.reset : "Auto-connect on launch is off."); }
+  if (ans === "d") { state.dnsTunnel = !state.dnsTunnel; saveConfig({ dnsTunnel: state.dnsTunnel }); return setMsg(state.dnsTunnel ? A.green + "DNS will tunnel through the full tunnel (no plaintext DNS leak)." + A.reset : "DNS tunnelling off."); }
   return draw(); // enter / anything else -> back to main
 }
 
@@ -1225,6 +1235,7 @@ function cleanup() {
   if (renderTimer) clearInterval(renderTimer);
   stopHealthMonitor();
   stopStats();
+  try { dnsFwd && dnsFwd.close(); } catch {}
   // Signal the root TUN session to tear down (restores routing). Synchronous file touch, safe
   // here; the session also self-heals via its owner-PID watchdog if this never runs.
   if (state.tunActive && !isDemo()) tun.requestStopSync();

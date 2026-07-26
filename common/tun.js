@@ -164,6 +164,27 @@ export function iptablesKillSwitchTeardown() {
   ].join("\n");
 }
 
+// --- DNS-through-tunnel: redirect the machine's port-53 traffic to the local forwarder, which
+// relays it over the tunnel. The forwarder's own upstream uses the SOCKS port (not :53), so it
+// can never loop back through this rule. Pure -> unit-testable. ---
+export function pfDnsRedirect(dnsPort) {
+  // rdr must precede filter rules in a pf anchor. NOTE: redirecting locally-originated :53 on macOS
+  // is the experimental part - validate that mDNSResponder actually honors it before trusting it.
+  return `rdr pass inet proto { tcp udp } from any to any port 53 -> 127.0.0.1 port ${dnsPort}\n`;
+}
+export function iptablesDnsRedirect(dnsPort) {
+  return [
+    `iptables -t nat -A OUTPUT -p udp --dport 53 -j REDIRECT --to-ports ${dnsPort}`,
+    `iptables -t nat -A OUTPUT -p tcp --dport 53 -j REDIRECT --to-ports ${dnsPort}`,
+  ].join("\n");
+}
+export function iptablesDnsRedirectTeardown(dnsPort) {
+  return [
+    `iptables -t nat -D OUTPUT -p udp --dport 53 -j REDIRECT --to-ports ${dnsPort} 2>/dev/null || true`,
+    `iptables -t nat -D OUTPUT -p tcp --dport 53 -j REDIRECT --to-ports ${dnsPort} 2>/dev/null || true`,
+  ].join("\n");
+}
+
 // Pick a utun index not currently in use (macOS system uses low ones; stay high).
 export function firstFreeUtun(ifconfigList, base = 123, limit = 240) {
   const used = new Set((ifconfigList.match(/utun\d+/g) || []).map((n) => Number(n.slice(4))));
@@ -235,17 +256,19 @@ export async function ensureBinary(onLog = () => {}) {
 
 // The root session script. It owns tun2socks, applies the routing, then blocks until asked to
 // stop / the app dies / tun2socks dies - and always tears down on the way out (trap on EXIT).
-export function sessionScript({ dev, socksPort, serverIp, dnsIps, service, ownerPid, killSwitch = false }) {
-  const dnsAdd = dnsIps.map((d) => `route -n add -host ${d} "$GW" 2>/dev/null || true`).join("\n  ");
-  const dnsDel = dnsIps.map((d) => `route -n delete -host ${d} 2>/dev/null || true`).join("\n  ");
-  const ksSetup = killSwitch ? `
-# kill switch: lock down all egress except loopback, the tun, the server, and DNS. Independent of
-# the utun, so nothing leaks even if tun2socks crashes.
+export function sessionScript({ dev, socksPort, serverIp, dnsIps, service, ownerPid, killSwitch = false, dnsTunnel = false, dnsPort = 5353 }) {
+  // When DNS is tunnelled we must NOT host-route the resolvers direct (that was the leak).
+  const dnsAdd = dnsTunnel ? "" : dnsIps.map((d) => `route -n add -host ${d} "$GW" 2>/dev/null || true`).join("\n  ");
+  const dnsDel = dnsTunnel ? "" : dnsIps.map((d) => `route -n delete -host ${d} 2>/dev/null || true`).join("\n  ");
+  const usePf = killSwitch || dnsTunnel;   // one pf anchor carries the DNS rdr and/or the kill-switch block
+  const pfBody = (dnsTunnel ? pfDnsRedirect(dnsPort) : "") + (killSwitch ? pfKillSwitchRules(serverIp, dnsIps, dev) : "");
+  const ksSetup = usePf ? `
+# pf: ${[dnsTunnel ? "redirect :53 to the local DNS forwarder" : "", killSwitch ? "kill-switch lockdown" : ""].filter(Boolean).join(" + ")}
 cat > ${JSON.stringify(KS_FILE)} <<'PFEOF'
-${pfKillSwitchRules(serverIp, dnsIps, dev)}PFEOF
+${pfBody}PFEOF
 KSTOKEN=$(pfctl -E 2>&1 | awk '/Token/{print $3; exit}')
 { cat /etc/pf.conf 2>/dev/null; printf 'anchor "collateral"\\nload anchor "collateral" from "%s"\\n' ${JSON.stringify(KS_FILE)}; } | pfctl -f - 2>/dev/null || true` : "";
-  const ksTeardown = killSwitch ? `
+  const ksTeardown = usePf ? `
   pfctl -a collateral -F all 2>/dev/null || true
   pfctl -f /etc/pf.conf 2>/dev/null || true
   [ -n "\${KSTOKEN:-}" ] && pfctl -X "$KSTOKEN" 2>/dev/null || true
@@ -316,15 +339,15 @@ ${holdLoop}
 
 // The Linux root session script. Same shape as the macOS one, but driven by `ip` instead of
 // `route`/`ifconfig`/`networksetup`, and IPv6 toggled via sysctl. Run as root via pkexec.
-export function linuxSessionScript({ dev, socksPort, serverIp, dnsIps, ownerPid, killSwitch = false }) {
-  const dnsAdd = dnsIps.map((d) => `ip route add ${d}/32 via "$GW" dev "$OIF" 2>/dev/null || ip route add ${d}/32 via "$GW" 2>/dev/null || true`).join("\n");
-  const dnsDel = dnsIps.map((d) => `ip route del ${d}/32 2>/dev/null || true`).join("\n  ");
-  const ksSetup = killSwitch ? `
-# kill switch: block all egress except loopback, the tun, the server, and DNS. Survives a
-# tun2socks crash, so nothing leaks while the tunnel is down.
-${iptablesKillSwitchSetup(serverIp, dnsIps, dev)}` : "";
-  const ksTeardown = killSwitch ? `
-  ${iptablesKillSwitchTeardown().split("\n").join("\n  ")}` : "";
+export function linuxSessionScript({ dev, socksPort, serverIp, dnsIps, ownerPid, killSwitch = false, dnsTunnel = false, dnsPort = 5353 }) {
+  // When DNS is tunnelled we must NOT host-route the resolvers direct (that was the leak).
+  const dnsAdd = dnsTunnel ? "" : dnsIps.map((d) => `ip route add ${d}/32 via "$GW" dev "$OIF" 2>/dev/null || ip route add ${d}/32 via "$GW" 2>/dev/null || true`).join("\n");
+  const dnsDel = dnsTunnel ? "" : dnsIps.map((d) => `ip route del ${d}/32 2>/dev/null || true`).join("\n  ");
+  const ksSetup = (killSwitch || dnsTunnel) ? `
+# ${[dnsTunnel ? "redirect :53 to the local DNS forwarder" : "", killSwitch ? "kill-switch lockdown" : ""].filter(Boolean).join(" + ")}
+${[dnsTunnel ? iptablesDnsRedirect(dnsPort) : "", killSwitch ? iptablesKillSwitchSetup(serverIp, dnsIps, dev) : ""].filter(Boolean).join("\n")}` : "";
+  const ksTeardown = (killSwitch || dnsTunnel) ? `
+  ${[dnsTunnel ? iptablesDnsRedirectTeardown(dnsPort) : "", killSwitch ? iptablesKillSwitchTeardown() : ""].filter(Boolean).join("\n").split("\n").join("\n  ")}` : "";
   const holdLoop = killSwitch ? `
 # kill-switch mode: keep the lockdown even if tun2socks dies; relaunch it to self-repair. Stop only
 # on request or when the app is gone - then the trap flushes the firewall and heals the network.
@@ -399,7 +422,7 @@ const asEsc = (s) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 // Start device-wide TUN. Needs the SOCKS client already listening on `socksPort`. Prompts once
 // for admin (GUI). Resolves when the interface is up and routed; rejects with the log tail on
 // failure. Reuses the existing tunnel - no server changes.
-export async function startTun({ socksPort, serverHost, onLog = () => {}, killSwitch = false }) {
+export async function startTun({ socksPort, serverHost, onLog = () => {}, killSwitch = false, dnsTunnel = false, dnsPort = 5353 }) {
   if (!supported()) throw new Error("Device-wide tunnel is supported on macOS and Linux.");
   await ensureBinary(onLog);
   const serverIp = await resolveServerIp(serverHost);
@@ -411,7 +434,7 @@ export async function startTun({ socksPort, serverHost, onLog = () => {}, killSw
 
   onLog("requesting admin access (one prompt)…");
   if (IS_LINUX) {
-    fs.writeFileSync(SESSION_SH, linuxSessionScript({ dev, socksPort, serverIp, dnsIps, ownerPid: process.pid, killSwitch }));
+    fs.writeFileSync(SESSION_SH, linuxSessionScript({ dev, socksPort, serverIp, dnsIps, ownerPid: process.pid, killSwitch, dnsTunnel, dnsPort }));
     // pkexec pops the polkit prompt and runs the session as root; setsid + & detaches it so this
     // call returns immediately and we then wait on the READY flag.
     const inner = `setsid bash '${SESSION_SH}' </dev/null >'${LOG_FILE}' 2>&1 &`;
@@ -423,7 +446,7 @@ export async function startTun({ socksPort, serverHost, onLog = () => {}, killSw
     }
   } else {
     const service = await primaryService().catch(() => ""); // for IPv6 leak control (may be "")
-    fs.writeFileSync(SESSION_SH, sessionScript({ dev, socksPort, serverIp, dnsIps, service, ownerPid: process.pid, killSwitch }));
+    fs.writeFileSync(SESSION_SH, sessionScript({ dev, socksPort, serverIp, dnsIps, service, ownerPid: process.pid, killSwitch, dnsTunnel, dnsPort }));
     // No nohup: under `do shell script … with administrator privileges` there's no controlling
     // terminal, so nohup errors ("can't detach from console"). Redirecting all three fds and
     // backgrounding detaches it cleanly; with no tty there's no SIGHUP to survive, and the job

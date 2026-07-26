@@ -18,7 +18,7 @@ import { FrameParser, encodeFrame, OPCODES } from "./common/ws-frame.js";
 import { renderFrame, hitTest, fmtBytes, latLevel, pickFastest, mergeBy, buildBackup, planImport, semverGt } from "./tui.js";
 import { parseEndpoint } from "./common/doctor.js";
 import { parseKeys } from "./worker-shim.js";
-import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun, parseLinuxDefaultRoute, parseResolvConf, parseResolvectl, firstFreeTun, pfKillSwitchRules, iptablesKillSwitchSetup, iptablesKillSwitchTeardown } from "./common/tun.js";
+import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun, parseLinuxDefaultRoute, parseResolvConf, parseResolvectl, firstFreeTun, pfKillSwitchRules, iptablesKillSwitchSetup, iptablesKillSwitchTeardown, pfDnsRedirect, iptablesDnsRedirect, iptablesDnsRedirectTeardown } from "./common/tun.js";
 import { aptHint } from "./provision/vps.js";
 import { socksUdpWrap, socksUdpUnwrap } from "./common/dns.js";
 import { normalizeDomain } from "./provision/vps.js";
@@ -383,6 +383,14 @@ test("kill switch (Linux iptables): dedicated chain hooked into OUTPUT, cleanly 
   const down = iptablesKillSwitchTeardown();
   assert.match(down, /-D OUTPUT -j COLLATERAL_KS/);
   assert.match(down, /-X COLLATERAL_KS/);
+});
+
+test("dns-through-tunnel: redirect rules point :53 at the local forwarder", () => {
+  assert.match(pfDnsRedirect(5353), /rdr pass inet proto \{ tcp udp \} from any to any port 53 -> 127\.0\.0\.1 port 5353/);
+  const s = iptablesDnsRedirect(5353);
+  assert.match(s, /-t nat -A OUTPUT -p udp --dport 53 -j REDIRECT --to-ports 5353/);
+  assert.match(s, /-p tcp --dport 53 -j REDIRECT --to-ports 5353/);
+  assert.match(iptablesDnsRedirectTeardown(5353), /-t nat -D OUTPUT -p udp --dport 53 -j REDIRECT --to-ports 5353/);
 });
 
 test("dns: socks-udp wrap/unwrap round-trips the DNS payload", () => {
