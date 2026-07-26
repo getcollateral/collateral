@@ -16,6 +16,7 @@ import { qrMatrix } from "./common/qr.js";
 import { vlessUriFromConfig, parseVlessUri } from "./common/config.js";
 import { FrameParser, encodeFrame, OPCODES } from "./common/ws-frame.js";
 import { renderFrame, hitTest } from "./tui.js";
+import { parseEndpoint } from "./common/doctor.js";
 import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun, parseLinuxDefaultRoute, parseResolvConf, parseResolvectl, firstFreeTun } from "./common/tun.js";
 import { normalizeDomain } from "./provision/vps.js";
 
@@ -279,6 +280,14 @@ test("TUN(linux): resolv.conf public resolvers, skipping the systemd-resolved st
 test("TUN(linux): firstFreeTun picks the first unused collateralN", () => {
   assert.equal(firstFreeTun("lo eth0 collateral0 collateral1"), "collateral2");
   assert.equal(firstFreeTun("lo eth0 wlan0"), "collateral0");
+});
+
+test("doctor: parseEndpoint splits host / port / scheme", () => {
+  const a = parseEndpoint("wss://example.com/abc");
+  assert.equal(a.host, "example.com"); assert.equal(a.port, 443); assert.equal(a.secure, true);
+  const b = parseEndpoint("ws://1.2.3.4:8787/x");
+  assert.equal(b.host, "1.2.3.4"); assert.equal(b.port, 8787); assert.equal(b.secure, false);
+  assert.equal(parseEndpoint("wss://host.tld:8443/p").port, 8443);
 });
 
 test("TUI: setup view lists provisioning steps with state", () => {

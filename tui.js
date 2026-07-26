@@ -20,6 +20,7 @@ import { setSocks, socksEnabled, primaryService, supported as sysproxySupported 
 import * as tun from "./common/tun.js";
 import { qrToTerminal } from "./common/qr.js";
 import { vlessUriFromConfig, parseVlessUri } from "./common/config.js";
+import { diagnose } from "./common/doctor.js";
 import { scanQrViaCamera, supported as scanSupported } from "./common/qrscan.js";
 
 const VPS_STEPS = [
@@ -852,6 +853,27 @@ function isEntrypoint() {
   try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); }
   catch { return false; }
 }
+// `collateral doctor` - non-interactive health check. Runs the checklist and exits (0 = all good,
+// 1 = a problem). Doesn't touch the terminal / raw mode, so it's safe to pipe or run in scripts.
+async function doctorCli() {
+  const cfg = loadConfig();
+  const TTY = process.stdout.isTTY;
+  const paint = (code) => (s) => TTY ? `${code}${s}${A.reset}` : s;
+  const g = paint(A.green), rd = paint(A.red), am = paint(A.amber), dm = paint(A.dim), bd = paint(A.bold), tl = paint(A.teal);
+  const sym = { ok: g("✓"), warn: am("!"), fail: rd("✗"), skip: dm("·") };
+  process.stdout.write(`\n${tl("[•]")} ${bd("collateral doctor")}\n\n`);
+  let bad = 0, warn = 0;
+  for await (const res of diagnose(cfg)) {
+    if (res.status === "fail") bad++; else if (res.status === "warn") warn++;
+    process.stdout.write(`  ${sym[res.status] || " "}  ${bd(res.name.padEnd(11))}  ${dm(res.detail)}\n`);
+  }
+  const summary = bad ? rd(`\n${bad} problem${bad > 1 ? "s" : ""} found - fix the ✗ line${bad > 1 ? "s" : ""} above.`)
+    : warn ? am(`\nWorks, with ${warn} warning${warn > 1 ? "s" : ""}.`)
+    : g("\nAll good.");
+  process.stdout.write(summary + "\n\n");
+  process.exit(bad ? 1 : 0);
+}
+
 if (isEntrypoint()) {
   // WebSocket (and other globals we rely on) are only built in on Node >= 22. Debian/Ubuntu ship
   // Node 18, so fail fast with an actionable message instead of a cryptic ReferenceError at connect.
@@ -861,5 +883,6 @@ if (isEntrypoint()) {
       `Install a newer Node and re-run:  nvm install 22   (or https://nodejs.org)\n`);
     process.exit(1);
   }
-  main();
+  if (process.argv[2] === "doctor") doctorCli();
+  else main();
 }
