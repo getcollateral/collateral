@@ -12,7 +12,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import net from "node:net";
-import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { spawnSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { startClient } from "./client.js";
 import { getExitIP } from "./common/probe.js";
@@ -1149,6 +1150,95 @@ async function doctorCli() {
   process.exit(bad ? 1 : 0);
 }
 
+// --- Headless CLI: `collateral up|down|status`, for servers and scripts (no TUI, no raw mode). ---
+// `up` spawns a detached background agent that runs the SOCKS client; `down` stops it; `status`
+// probes it. Exit codes are script-friendly: status is 0 when up + healthy, non-zero otherwise.
+const AGENT_DIR = path.join(os.homedir(), ".collateral");
+const AGENT_FILE = path.join(AGENT_DIR, "agent.json");
+const AGENT_LOG = path.join(AGENT_DIR, "agent.log");
+function readAgent() { try { return JSON.parse(fs.readFileSync(AGENT_FILE, "utf8")); } catch { return null; } }
+function pidAlive(pid) { if (!pid) return false; try { process.kill(pid, 0); return true; } catch { return false; } }
+
+// Hidden `__agent` mode: the long-lived headless process. Binds the SOCKS client and stays up
+// until signalled, registering itself in agent.json so `down`/`status` can find it.
+async function agentMode() {
+  const cfg = loadConfig();
+  if (!isWsUrl(cfg.workerUrl) || !isUuid(cfg.uuid)) { console.error("agent: no valid server/key in config"); process.exit(1); }
+  const listen = (p) => new Promise((res, rej) => { const s = startClient({ socksPort: p, workerUrl: cfg.workerUrl, uuid: cfg.uuid, quiet: true }); s.once("listening", () => res(s)); s.once("error", rej); });
+  const want = Number(process.env.COLLATERAL_SOCKS_PORT || 1080);
+  let srv;
+  try { srv = await listen(want); }
+  catch (e) { if (e && e.code === "EADDRINUSE") srv = await listen(0); else { console.error("agent: " + (e.message || e)); process.exit(1); } }
+  const port = srv.address().port;
+  try { fs.mkdirSync(AGENT_DIR, { recursive: true }); } catch {}
+  fs.writeFileSync(AGENT_FILE, JSON.stringify({ pid: process.pid, socksPort: port, workerUrl: cfg.workerUrl, startedAt: Date.now() }));
+  const bye = () => { try { fs.unlinkSync(AGENT_FILE); } catch {} process.exit(0); };
+  process.on("SIGTERM", bye); process.on("SIGINT", bye);   // the SOCKS server keeps the loop alive
+}
+
+async function cliUp() {
+  const cfg = loadConfig();
+  if (!isWsUrl(cfg.workerUrl) || !isUuid(cfg.uuid)) { console.error("No server/key configured. Open the app once (or run `collateral doctor`) to set it up."); process.exit(1); }
+  const cur = readAgent();
+  if (cur && pidAlive(cur.pid)) { console.log(`Already up (pid ${cur.pid}, SOCKS 127.0.0.1:${cur.socksPort}).`); process.exit(0); }
+  try { fs.mkdirSync(AGENT_DIR, { recursive: true }); } catch {}
+  const out = fs.openSync(AGENT_LOG, "a");
+  const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "__agent"], { detached: true, stdio: ["ignore", out, out] });
+  child.unref();
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    const a = readAgent();
+    if (a && a.pid === child.pid && pidAlive(a.pid)) {
+      try { const ip = await getExitIP(a.socksPort); console.log(`collateral up - exit IP ${ip}, SOCKS 127.0.0.1:${a.socksPort} (pid ${a.pid}).`); process.exit(0); }
+      catch { /* tunnel not verified yet, keep waiting */ }
+    }
+    if (!pidAlive(child.pid)) break; // agent died during startup
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  try { process.kill(child.pid, "SIGTERM"); } catch {}
+  console.error(`Couldn't bring the tunnel up - run \`collateral doctor\` to see why. (log: ${AGENT_LOG})`);
+  process.exit(1);
+}
+
+function cliDown() {
+  const a = readAgent();
+  if (!a || !pidAlive(a.pid)) { try { fs.unlinkSync(AGENT_FILE); } catch {} console.log("Not running."); process.exit(0); }
+  const pid = a.pid;
+  try { process.kill(pid, "SIGTERM"); } catch {}
+  const deadline = Date.now() + 5000;
+  (function waitGone() {
+    if (!pidAlive(pid)) { try { fs.unlinkSync(AGENT_FILE); } catch {} console.log("collateral down."); process.exit(0); }
+    if (Date.now() > deadline) { console.error(`Sent stop but pid ${pid} is still alive.`); process.exit(1); }
+    setTimeout(waitGone, 200);
+  })();
+}
+
+async function cliStatus() {
+  const a = readAgent();
+  if (!a || !pidAlive(a.pid)) { console.log("down"); process.exit(3); }
+  try {
+    const ip = await getExitIP(a.socksPort);
+    const up = Math.max(0, Math.round((Date.now() - (a.startedAt || Date.now())) / 1000));
+    console.log(`up - exit IP ${ip}, SOCKS 127.0.0.1:${a.socksPort}, pid ${a.pid}, uptime ${up}s`);
+    process.exit(0);
+  } catch {
+    console.log(`up but the tunnel isn't responding (pid ${a.pid}, SOCKS 127.0.0.1:${a.socksPort}) - try \`collateral down\` then \`up\`.`);
+    process.exit(4);
+  }
+}
+
+function printCliHelp() {
+  process.stdout.write(
+    `collateral - a private tunnel you own end to end\n\n` +
+    `  collateral            open the control panel (interactive)\n` +
+    `  collateral up         connect in the background, print the exit IP\n` +
+    `  collateral down       stop the background tunnel\n` +
+    `  collateral status     tunnel status + exit IP  (exit 0 = up, non-zero = down)\n` +
+    `  collateral doctor     run the connection health check\n\n` +
+    `Set up your server once in the app; config lives in ~/.collateral-config.json.\n`);
+  process.exit(0);
+}
+
 if (isEntrypoint()) {
   // WebSocket (and other globals we rely on) are only built in on Node >= 22. Debian/Ubuntu ship
   // Node 18, so fail fast with an actionable message instead of a cryptic ReferenceError at connect.
@@ -1158,6 +1248,12 @@ if (isEntrypoint()) {
       `Install a newer Node and re-run:  nvm install 22   (or https://nodejs.org)\n`);
     process.exit(1);
   }
-  if (process.argv[2] === "doctor") doctorCli();
+  const sub = process.argv[2];
+  if (sub === "doctor") doctorCli();
+  else if (sub === "__agent") agentMode();
+  else if (sub === "up") cliUp();
+  else if (sub === "down") cliDown();
+  else if (sub === "status") cliStatus();
+  else if (sub === "help" || sub === "--help" || sub === "-h") printCliHelp();
   else main();
 }

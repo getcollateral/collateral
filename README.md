@@ -164,6 +164,23 @@ It runs a checklist - your config, DNS, port 443, the TLS cert, SSH to the VM, a
 end-to-end (the live exit IP) - and prints a pass/warn/fail line for each. Exits non-zero if
 anything's broken, so it's scriptable too.
 
+## Run it headless (servers, scripts)
+
+Besides the interactive app, Collateral has plain subcommands that never open the TUI - handy on a
+Linux box or in a script:
+
+```
+collateral up       # connect in the background, prints the exit IP
+collateral status   # status + exit IP  (exit 0 = up, non-zero = down)
+collateral down     # stop the background tunnel
+collateral doctor   # connection health check
+```
+
+`up` runs the SOCKS proxy on `127.0.0.1:1080` (override with `COLLATERAL_SOCKS_PORT`) in a detached
+process that stays up until `down` or a reboot. Configure it once in the app first, or copy your
+`~/.collateral-config.json` to the server. Because `status` exits non-zero when the tunnel is down,
+it drops straight into cron jobs, systemd health checks, and CI.
+
 ## Honest limits
 
 - **Full tunnel covers macOS and Linux (Windows is planned).** The terminal app and SOCKS proxy
