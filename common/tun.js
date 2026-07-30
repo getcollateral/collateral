@@ -57,6 +57,7 @@ const BIN = path.join(BIN_DIR, "tun2socks");
 const STOP_FILE = path.join(DIR, "tun.stop");
 const READY_FILE = path.join(DIR, "tun.ready");
 const OWNER_FILE = path.join(DIR, "tun.owner");
+const RESTART_FILE = path.join(DIR, "tun.restart"); // app touches this to relaunch a wedged tun2socks in place
 const SESSION_SH = path.join(DIR, "tun-session.sh");
 const LOG_FILE = path.join(DIR, "tun.log");
 const KS_FILE = path.join(DIR, "killswitch.pf.conf");   // macOS pf anchor rules for the kill switch
@@ -285,22 +286,32 @@ dscacheutil -flushcache 2>/dev/null || true; killall -HUP mDNSResponder 2>/dev/n
   if printf '%s' "\${OLD_DNS:-}" | grep -qi "aren't any"; then networksetup -setdnsservers "$SERVICE" "Empty" 2>/dev/null || true
   else networksetup -setdnsservers "$SERVICE" \${OLD_DNS:-Empty} 2>/dev/null || true; fi
   dscacheutil -flushcache 2>/dev/null || true; killall -HUP mDNSResponder 2>/dev/null || true` : "";
-  const holdLoop = killSwitch ? `
-# kill-switch mode: keep the lockdown even if tun2socks dies; relaunch it to self-repair. Stop only
-# on request or when the app is gone - then the trap flushes the firewall and heals the network.
-while [ ! -f "$STOP" ] && kill -0 "$OWNER" 2>/dev/null; do
-  if ! kill -0 "\${TPID:-0}" 2>/dev/null; then
+  const relaunch = `kill "$TPID" 2>/dev/null
     "$BIN" --device "$DEV" --proxy "socks5://127.0.0.1:$SOCKS" --loglevel warn &
     TPID=$!
     for i in $(seq 1 60); do ifconfig "$DEV" >/dev/null 2>&1 && break; sleep 0.1; done
     ifconfig "$DEV" "$ADDR" "$ADDR" up 2>/dev/null || true
     route -n add -net 0.0.0.0/1 "$ADDR" 2>/dev/null || true
-    route -n add -net 128.0.0.0/1 "$ADDR" 2>/dev/null || true
+    route -n add -net 128.0.0.0/1 "$ADDR" 2>/dev/null || true`;
+  const holdLoop = killSwitch ? `
+# kill-switch mode: relaunch tun2socks if it dies OR the app flags it wedged (RESTART file). Stop only
+# on request/app-gone - then the trap flushes the firewall and heals the network.
+while [ ! -f "$STOP" ] && kill -0 "$OWNER" 2>/dev/null; do
+  if [ -f "$RESTART" ] || ! kill -0 "\${TPID:-0}" 2>/dev/null; then
+    rm -f "$RESTART"
+    ${relaunch}
   fi
   sleep 1
 done` : `
-# hold until: stop requested, app gone, or tun2socks died - then the trap heals the network
-while [ ! -f "$STOP" ] && kill -0 "$OWNER" 2>/dev/null && kill -0 "$TPID" 2>/dev/null; do
+# hold until stop/app-gone. On an app-flagged wedge (RESTART file) relaunch tun2socks in place; if it
+# dies on its own, exit so the trap heals the network (fail-open).
+while [ ! -f "$STOP" ] && kill -0 "$OWNER" 2>/dev/null; do
+  if [ -f "$RESTART" ]; then
+    rm -f "$RESTART"
+    ${relaunch}
+  elif ! kill -0 "\${TPID:-0}" 2>/dev/null; then
+    break
+  fi
   sleep 1
 done`;
   return `#!/bin/bash
@@ -313,9 +324,10 @@ SERVER_IP=${JSON.stringify(serverIp)}
 OWNER=${JSON.stringify(String(ownerPid))}
 STOP=${JSON.stringify(STOP_FILE)}
 READY=${JSON.stringify(READY_FILE)}
+RESTART=${JSON.stringify(RESTART_FILE)}
 SOCKS=${JSON.stringify(String(socksPort))}
 SERVICE=${JSON.stringify(service || "")}
-rm -f "$STOP" "$READY"
+rm -f "$STOP" "$READY" "$RESTART"
 
 cleanup() {
   [ -n "\${TPID:-}" ] && kill "$TPID" 2>/dev/null
@@ -323,7 +335,7 @@ cleanup() {
   ${dnsDel || ": no public dns to unroute"}
   [ -n "$SERVICE" ] && networksetup -setv6automatic "$SERVICE" 2>/dev/null || true  # restore IPv6${ksTeardown}${dnsRestore}
   # the /1 routes + the utun itself disappear automatically when tun2socks exits
-  rm -f "$STOP" "$READY"
+  rm -f "$STOP" "$READY" "$RESTART"
 }
 trap cleanup EXIT INT TERM
 
@@ -360,23 +372,33 @@ export function linuxSessionScript({ dev, socksPort, serverIp, dnsIps, ownerPid,
 ${[dnsTunnel ? iptablesDnsRedirect(dnsPort) : "", killSwitch ? iptablesKillSwitchSetup(serverIp, dnsIps, dev) : ""].filter(Boolean).join("\n")}` : "";
   const ksTeardown = (killSwitch || dnsTunnel) ? `
   ${[dnsTunnel ? iptablesDnsRedirectTeardown(dnsPort) : "", killSwitch ? iptablesKillSwitchTeardown() : ""].filter(Boolean).join("\n").split("\n").join("\n  ")}` : "";
-  const holdLoop = killSwitch ? `
-# kill-switch mode: keep the lockdown even if tun2socks dies; relaunch it to self-repair. Stop only
-# on request or when the app is gone - then the trap flushes the firewall and heals the network.
-while [ ! -f "$STOP" ] && kill -0 "$OWNER" 2>/dev/null; do
-  if ! kill -0 "\${TPID:-0}" 2>/dev/null; then
+  const relaunch = `kill "$TPID" 2>/dev/null
     "$BIN" --device "tun://$DEV" --proxy "socks5://127.0.0.1:$SOCKS" --loglevel warn &
     TPID=$!
     for i in $(seq 1 60); do ip link show "$DEV" >/dev/null 2>&1 && break; sleep 0.1; done
     ip addr add "$ADDR"/32 dev "$DEV" 2>/dev/null || true
     ip link set "$DEV" up 2>/dev/null || true
     ip route add 0.0.0.0/1 dev "$DEV" 2>/dev/null || true
-    ip route add 128.0.0.0/1 dev "$DEV" 2>/dev/null || true
+    ip route add 128.0.0.0/1 dev "$DEV" 2>/dev/null || true`;
+  const holdLoop = killSwitch ? `
+# kill-switch mode: relaunch tun2socks if it dies OR the app flags it wedged (RESTART file). Stop only
+# on request/app-gone - then the trap flushes the firewall and heals the network.
+while [ ! -f "$STOP" ] && kill -0 "$OWNER" 2>/dev/null; do
+  if [ -f "$RESTART" ] || ! kill -0 "\${TPID:-0}" 2>/dev/null; then
+    rm -f "$RESTART"
+    ${relaunch}
   fi
   sleep 1
 done` : `
-# hold until: stop requested, app gone, or tun2socks died - then the trap heals the network
-while [ ! -f "$STOP" ] && kill -0 "$OWNER" 2>/dev/null && kill -0 "$TPID" 2>/dev/null; do
+# hold until stop/app-gone. On an app-flagged wedge (RESTART file) relaunch tun2socks in place; if it
+# dies on its own, exit so the trap heals the network (fail-open).
+while [ ! -f "$STOP" ] && kill -0 "$OWNER" 2>/dev/null; do
+  if [ -f "$RESTART" ]; then
+    rm -f "$RESTART"
+    ${relaunch}
+  elif ! kill -0 "\${TPID:-0}" 2>/dev/null; then
+    break
+  fi
   sleep 1
 done`;
   return `#!/bin/bash
@@ -389,8 +411,9 @@ SERVER_IP=${JSON.stringify(serverIp)}
 OWNER=${JSON.stringify(String(ownerPid))}
 STOP=${JSON.stringify(STOP_FILE)}
 READY=${JSON.stringify(READY_FILE)}
+RESTART=${JSON.stringify(RESTART_FILE)}
 SOCKS=${JSON.stringify(String(socksPort))}
-rm -f "$STOP" "$READY"
+rm -f "$STOP" "$READY" "$RESTART"
 
 # default route BEFORE we add tun routes: gateway + outbound interface
 GW=$(ip route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="via"){print $(i+1);exit}}')
@@ -404,7 +427,7 @@ cleanup() {
   ${dnsDel || ": no public dns to unroute"}
   sysctl -w net.ipv6.conf.all.disable_ipv6="$V6WAS" >/dev/null 2>&1 || true${ksTeardown}
   # the /1 routes + the tun device disappear automatically when tun2socks exits
-  rm -f "$STOP" "$READY"
+  rm -f "$STOP" "$READY" "$RESTART"
 }
 trap cleanup EXIT INT TERM
 
@@ -441,7 +464,7 @@ export async function startTun({ socksPort, serverHost, onLog = () => {}, killSw
   const dev = await freeDev();
   const dnsIps = await publicDnsServers();
   fs.mkdirSync(DIR, { recursive: true });
-  for (const f of [STOP_FILE, READY_FILE]) { try { fs.unlinkSync(f); } catch {} }
+  for (const f of [STOP_FILE, READY_FILE, RESTART_FILE]) { try { fs.unlinkSync(f); } catch {} }
   fs.writeFileSync(OWNER_FILE, String(process.pid));
 
   onLog("requesting admin access (one prompt)…");
@@ -491,6 +514,10 @@ export async function stopTun(onLog = () => {}) {
 
 // Best-effort synchronous stop for process-exit handlers (can't await there).
 export function requestStopSync() { try { fs.writeFileSync(STOP_FILE, "1"); } catch {} }
+
+// Ask the root session to relaunch tun2socks in place (no admin re-prompt) - used when the app
+// detects the helper wedged: alive but no longer forwarding, so the device is black-holed.
+export function requestRestart() { try { fs.writeFileSync(RESTART_FILE, "1"); } catch {} }
 
 // Is a TUN session currently active (e.g. left over from a previous run)?
 export async function isActive() {

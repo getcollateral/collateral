@@ -67,7 +67,7 @@ const state = { ...loadConfig(), connected: false, reconnecting: false, socksPor
 let socks = null, spinI = 0, inPrompt = false, renderTimer = null, lastBuilt = null, quitting = false;
 let dnsFwd = null;            // the DNS-through-tunnel forwarder, when active
 const DNS_PORT = 5353;       // local forwarder port; the tun session redirects :53 here
-let healthTimer = null, healthFails = 0;
+let healthTimer = null, healthFails = 0, tunFails = 0;
 const HEALTH_OK_MS = Number(process.env.COLLATERAL_HEALTH_MS) || 30000; // healthy poll interval (test knob)
 
 const isWsUrl = (s) => /^wss?:\/\/[^\s]+$/i.test(s || "");
@@ -558,8 +558,24 @@ async function disconnect() {
 // returns - this keeps the STATUS honest (shows "reconnecting…" during an outage, flips back to
 // "connected" when it recovers) and refreshes the exit IP. Needs two consecutive failures before
 // flagging (rides out transient blips); polls slowly when healthy, retries fast while down.
-function startHealthMonitor() { healthFails = 0; scheduleHealth(HEALTH_OK_MS); }
-function stopHealthMonitor() { if (healthTimer) { clearTimeout(healthTimer); healthTimer = null; } healthFails = 0; }
+function startHealthMonitor() { healthFails = 0; tunFails = 0; scheduleHealth(HEALTH_OK_MS); }
+function stopHealthMonitor() { if (healthTimer) { clearTimeout(healthTimer); healthTimer = null; } healthFails = 0; tunFails = 0; }
+
+// Probe the DEVICE data path (through the utun), not the SOCKS loopback - so a wedged tun2socks
+// (alive but not forwarding, black-holing the whole device) is caught even though the SOCKS->server
+// path stays healthy. Dials a public web host that is neither the server nor a DNS resolver, so it
+// is NOT host-routed around the tunnel: a healthy full tunnel connects; a wedged one times out.
+function deviceProbe(timeoutMs = 6000) {
+  return new Promise((resolve) => {
+    const s = net.connect({ host: "cloudflare.com", port: 443 });
+    let done = false;
+    const finish = (ok) => { if (done) return; done = true; try { s.destroy(); } catch {} resolve(ok); };
+    s.setTimeout(timeoutMs);
+    s.once("connect", () => finish(true));
+    s.once("timeout", () => finish(false));
+    s.once("error", () => finish(false));
+  });
+}
 function scheduleHealth(ms) { if (healthTimer) clearTimeout(healthTimer); healthTimer = setTimeout(healthTick, ms); }
 async function healthTick() {
   healthTimer = null;
@@ -572,6 +588,21 @@ async function healthTick() {
     ]);
     state.exitIP = ip; healthFails = 0;
     if (state.reconnecting) { state.reconnecting = false; setMsg(A.green + `Tunnel recovered, exits via ${ip}.` + A.reset); }
+    // Full tunnel: getExitIP above rides the SOCKS loopback, which bypasses the utun. So ALSO verify
+    // the device path forwards - a wedged tun2socks passes the SOCKS check but black-holes everything.
+    if (state.tunActive && !isDemo()) {
+      const flowing = await deviceProbe();
+      if (!flowing) {
+        if (++tunFails >= 2) {  // two strikes while the SOCKS path is healthy = the helper is wedged
+          tunFails = 0;
+          tun.requestRestart(); // root session relaunches tun2socks in place (no admin re-prompt)
+          setMsg(A.amber + "Full tunnel stalled, restarting the tunnel helper…" + A.reset);
+          return scheduleHealth(Math.min(9000, HEALTH_OK_MS));
+        }
+        return scheduleHealth(Math.min(5000, HEALTH_OK_MS));
+      }
+      if (tunFails) { tunFails = 0; setMsg(A.green + `Full tunnel recovered, exits via ${ip}.` + A.reset); }
+    }
     scheduleHealth(HEALTH_OK_MS);
   } catch {
     if (socks && socks.authRejected) { // the owner revoked this key mid-session - reconnecting won't help
