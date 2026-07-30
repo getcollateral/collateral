@@ -146,11 +146,12 @@ export function startClient({ socksPort = 1080, host = "127.0.0.1", workerUrl, u
 
   // A VLESS-UDP tunnel to ONE destination. Each ws.send is one datagram; each ws message
   // received is one return datagram (WebSocket preserves boundaries, so no length framing).
-  function openUdpSession(destHost, destPort, onDatagram) {
+  function openUdpSession(destHost, destPort, onDatagram, onClose = () => {}) {
     const ws = new WebSocket(workerUrl);
     ws.binaryType = "arraybuffer";
     let wsOpen = false;
     const buffered = [];
+    const MAX_BUFFERED = 64; // only queue while still connecting; never let a dead session buffer forever
     ws.onopen = () => {
       ws.send(encodeVlessHeader({ uuid: uuidBytes, host: destHost, port: destPort, command: 2 }));
       wsOpen = true;
@@ -159,8 +160,15 @@ export function startClient({ socksPort = 1080, host = "127.0.0.1", workerUrl, u
     };
     ws.onmessage = (ev) => { onDatagram(Buffer.from(ev.data)); };
     ws.onerror = () => { try { ws.close(); } catch {} };
+    // A server-side close (60s idle, dgram error) must evict this session so the NEXT datagram opens
+    // a fresh tunnel - otherwise it becomes a zombie that silently black-holes that destination.
+    ws.onclose = () => { wsOpen = false; buffered.length = 0; onClose(); };
     return {
-      send(payload) { if (wsOpen && ws.readyState === 1) ws.send(payload); else buffered.push(payload); },
+      send(payload) {
+        if (wsOpen && ws.readyState === 1) ws.send(payload);
+        else if (ws.readyState === 0 && buffered.length < MAX_BUFFERED) buffered.push(payload); // still connecting
+        // closing/closed or over budget -> drop; the relay has evicted us and will re-establish
+      },
       close() { try { ws.close(); } catch {} },
     };
   }
@@ -171,10 +179,15 @@ export function startClient({ socksPort = 1080, host = "127.0.0.1", workerUrl, u
   function socks5Udp(ctrl) {
     const relay = dgram.createSocket("udp4");
     const sessions = new Map(); // "host:port" -> { session, hdrPrefix, app, idle, bump }
+    const MAX_SESSIONS = 512;   // ceiling so a churn storm (games open many destinations) can't grow unbounded
+    let closed = false;
+    const drop = (key) => { const s = sessions.get(key); if (!s) return; clearTimeout(s.idle); try { s.session.close(); } catch {} sessions.delete(key); };
     const closeAll = () => {
+      if (closed) return; closed = true;
       try { relay.close(); } catch {}
       for (const s of sessions.values()) { clearTimeout(s.idle); try { s.session.close(); } catch {} }
       sessions.clear();
+      try { ctrl.destroy(); } catch {} // drop the control socket so tun2socks re-issues UDP ASSOCIATE (avoids a permanent blackhole)
     };
     relay.on("error", closeAll);
     relay.on("message", (msg, rinfo) => {
@@ -183,13 +196,14 @@ export function startClient({ socksPort = 1080, host = "127.0.0.1", workerUrl, u
       const key = `${p.host}:${p.port}`;
       let s = sessions.get(key);
       if (!s) {
+        if (sessions.size >= MAX_SESSIONS) drop(sessions.keys().next().value); // evict the oldest
         s = { hdrPrefix: p.hdrPrefix, app: rinfo, idle: null };
-        s.bump = () => { clearTimeout(s.idle); s.idle = setTimeout(() => { try { s.session.close(); } catch {} sessions.delete(key); }, 60000); };
+        s.bump = () => { clearTimeout(s.idle); s.idle = setTimeout(() => drop(key), 60000); };
         s.session = openUdpSession(p.host, p.port, (datagram) => {
           server.bytesDown += datagram.length;
-          try { relay.send(Buffer.concat([s.hdrPrefix, datagram]), s.app.port, s.app.address); } catch {}
+          try { relay.send(Buffer.concat([s.hdrPrefix, datagram]), s.app.port, s.app.address, () => {}); } catch {} // per-send cb: a transient ENOBUFS can't nuke the association
           s.bump();
-        });
+        }, () => { if (sessions.get(key) === s) { clearTimeout(s.idle); sessions.delete(key); } }); // ws closed -> evict so the next datagram re-establishes
         sessions.set(key, s);
       }
       s.app = rinfo;      // reply to wherever the app last sent from
