@@ -61,7 +61,7 @@ export async function* diagnose(cfg = {}) {
 
   yield haveUrl && haveKey
     ? { name: "config", status: "ok", detail: "server address + access key set" }
-    : { name: "config", status: "fail", detail: `missing ${[!haveUrl && "server address (w)", !haveKey && "access key (u/g)"].filter(Boolean).join(" and ")}` };
+    : { name: "config", status: "fail", detail: `missing ${[!haveUrl && "server address (e)", !haveKey && "access key (e/g)"].filter(Boolean).join(" and ")}` };
 
   try { await dns.lookup("example.com"); yield { name: "local dns", status: "ok", detail: "your machine can resolve names" }; }
   catch { yield { name: "local dns", status: "fail", detail: "can't resolve names - are you online?" }; }

@@ -133,7 +133,7 @@ test("TUI: renders a disconnected frame with the menu", () => {
   assert.match(f, /disconnected/);
   assert.match(f, /c {2}connect/);       // key, then label (no brackets)
   assert.match(f, /q {2}quit/);
-  assert.match(f, /\(not set, press w\)/);
+  assert.match(f, /\(not set, press e\)/);
 });
 
 test("TUI: the [•] mark reflects connection state", () => {

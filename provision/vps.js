@@ -294,7 +294,7 @@ if (process.argv[1] && /vps\.js$/.test(process.argv[1]) && process.argv[2]) {
       console.log(`\n✓ SUCCESS`);
       console.log(`  worker URL : ${res.workerUrl}`);
       console.log(`  access key : ${res.uuid}`);
-      console.log(`\nOpen the TUI, press w then u to paste those, and connect.`);
+      console.log(`\nOpen the TUI, press e to paste those in, and connect.`);
       process.exit(0);
     })
     .catch((e) => { console.error(`\n✗ FAILED: ${e.message}`); process.exit(1); });

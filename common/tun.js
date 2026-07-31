@@ -12,10 +12,11 @@
 //     the machine's networking heals itself.
 //   • A host route for the server's own IP via the real gateway keeps the tunnel's own packets
 //     off the utun (otherwise they'd loop forever).
-//   • Host routes for the active public DNS servers keep name resolution working directly (DNS
-//     is NOT tunnelled: macOS resolves via mDNSResponder, which doesn't follow the utun routes,
-//     so forcing DNS through the tunnel needs a local DNS forwarder - a TODO). Fine for the
-//     school/office threat model, which mostly blocks by SNI/IP, not DNS.
+//   • Host routes for the active public DNS servers keep name resolution working directly. By
+//     default DNS is NOT tunnelled: macOS resolves via mDNSResponder, which doesn't follow the
+//     utun routes. Optional DNS-through-tunnel routes :53 to a local forwarder (common/dns.js);
+//     it's wired up on Linux, and macOS is parked (pf can't redirect locally-originated :53).
+//     Fine for the school/office threat model, which mostly blocks by SNI/IP, not DNS.
 //   • One admin prompt (a macOS GUI dialog) starts a root "session" script that owns tun2socks
 //     and *watches the app's PID*: if the app exits or crashes, the script tears everything
 //     down. The app asks it to stop by touching a file - no root needed to turn it off.

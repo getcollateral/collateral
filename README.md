@@ -162,6 +162,10 @@ leaking out over your normal connection - a firewall lockdown that only lets the
 packets and DNS through. It self-repairs (relaunches the tunnel automatically) and always releases
 on disconnect, quit, or crash, so you can never be stranded offline.
 
+**Tunnel DNS (optional).** In connection details (**e**) you can route DNS through the tunnel too,
+so your name lookups don't leak to the local network's resolver. When it's on, the status panel
+shows **dns tunnelled**. This is wired up on Linux today; macOS is on the roadmap.
+
 ---
 
 ## Move your config to another Mac - no typing (`x` → `i`)
