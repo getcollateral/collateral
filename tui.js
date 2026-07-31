@@ -5,6 +5,7 @@
 //   node tui.js        (or: npm run tui)
 //
 // Controls: c connect/disconnect · e connection details · t test · g generate key
+//           s server setup · d system proxy · f full tunnel · x share (QR) · i import (QR)
 //           m saved machines · k friends · p proxy help · q quit
 
 import readline from "node:readline";
@@ -63,7 +64,8 @@ const w = (s) => process.stdout.write(s);
 let PKG_VERSION = "0.0.0";
 try { PKG_VERSION = JSON.parse(fs.readFileSync(new URL("./package.json", import.meta.url), "utf8")).version || PKG_VERSION; } catch {}
 
-const state = { ...loadConfig(), connected: false, reconnecting: false, socksPort: null, exitIP: null, busy: false, busyText: "", view: "main", hover: null, systemProxy: false, tunActive: false, netService: null, msg: "Set your server + key, then press c to connect." };
+const savedCfg = loadConfig();
+const state = { ...savedCfg, connected: false, reconnecting: false, socksPort: null, exitIP: null, busy: false, busyText: "", view: "main", hover: null, systemProxy: false, tunActive: false, netService: null, msg: savedCfg.workerUrl ? "Ready. Press c to connect, or e to change connection details." : "New here? Press s to set up your server (or e if you already have one), then c to connect." };
 let socks = null, spinI = 0, inPrompt = false, renderTimer = null, lastBuilt = null, quitting = false;
 let dnsFwd = null;            // the DNS-through-tunnel forwarder, when active
 const DNS_PORT = 5353;       // local forwarder port; the tun session redirects :53 here
@@ -152,7 +154,7 @@ const GUIDE_PAGES = [
     `  ${A.amber}1${A.reset}  ${A.bold}Oracle Cloud Always-Free${A.reset}  ${A.dim}free forever, recommended${A.reset}`,
     `  ${A.amber}2${A.reset}  ${A.bold}Any Ubuntu VM you already have${A.reset}  ${A.dim}VPS / cloud / home${A.reset}`,
     ``,
-    `${A.dim}Already have a VM? Press space to the last page.${A.reset}`,
+    `${A.dim}Already have a VM? Space through to the last page.${A.reset}`,
   ],
   [
     `${A.bold}Oracle${A.reset}  ${A.dim}create the free account${A.reset}`, SEP,
@@ -163,7 +165,7 @@ const GUIDE_PAGES = [
   ],
   [
     `${A.bold}Oracle${A.reset}  ${A.dim}launch an Ubuntu instance${A.reset}`, SEP,
-    `Console: ${A.muted}Menu -> Compute -> Instances -> Create${A.reset}`,
+    `Console: ${A.muted}Menu → Compute → Instances → Create${A.reset}`,
     `  ${A.amber}•${A.reset} Image:  ${A.bold}Canonical Ubuntu${A.reset} ${A.dim}(22.04 or 24.04)${A.reset}`,
     `  ${A.amber}•${A.reset} Shape:  an ${A.bold}Always-Free-eligible${A.reset} one`,
     `     ${A.dim}VM.Standard.A1.Flex (1 OCPU/6GB) or E2.1.Micro${A.reset}`,
@@ -171,9 +173,9 @@ const GUIDE_PAGES = [
   [
     `${A.bold}Oracle${A.reset}  ${A.dim}key, IP, and ports${A.reset}`, SEP,
     `  ${A.amber}•${A.reset} SSH keys: pick ${A.bold}Generate a key pair${A.reset}, then`,
-    `     ${A.bold}download the private key${A.reset} ${A.dim}(save ~/.ssh/collateral.key)${A.reset}`,
+    `     ${A.bold}download the private key${A.reset} ${A.dim}(save it, e.g. in ~/.ssh/)${A.reset}`,
     `  ${A.amber}•${A.reset} After it boots, copy the ${A.bold}Public IP address${A.reset}`,
-    `  ${A.amber}•${A.reset} Open ports: the subnet's ${A.muted}Security List${A.reset} -> add`,
+    `  ${A.amber}•${A.reset} Open ports: the subnet's ${A.muted}Security List${A.reset} → add`,
     `     Ingress  source ${A.teal}0.0.0.0/0${A.reset}  TCP  ports ${A.teal}80${A.reset} and ${A.teal}443${A.reset}`,
     `     ${A.dim}(the one thing setup can't do for you)${A.reset}`,
   ],
@@ -224,8 +226,10 @@ function buildBox(s) {
       `  ${A.teal}host${A.reset} 127.0.0.1    ${A.teal}port${A.reset} ${port}`, ``,
       `${A.muted}Zen/Firefox${A.reset}  Manual proxy → SOCKS v5,`,
       `             tick "Proxy DNS when using SOCKS v5"`,
-      `${A.muted}device-wide${A.reset} (d)  flips the macOS system proxy;`,
+      `${A.muted}system proxy${A.reset} (d)  flips the macOS system proxy;`,
       `             Apple treats it as best-effort.`,
+      `${A.muted}full tunnel${A.reset} (f)  captures the whole device (mac/Linux),`,
+      `             TCP + UDP - the real device-wide mode.`,
       `${A.muted}curl${A.reset}         curl --socks5-hostname 127.0.0.1:${port} …`, ``,
       `${A.dim}Your VM reaches every site directly, nothing to${A.reset}`,
       `${A.dim}configure per site.${A.reset}`, SEP,
@@ -288,15 +292,15 @@ function buildBox(s) {
   const vw = innerW - 13;
   body.push(SEP,
     row("proxy", s.connected ? `${A.teal}socks5${A.reset}  127.0.0.1:${s.socksPort}` : none),
-    row("endpoint", s.workerUrl ? ellip(s.workerUrl, vw) : A.dim + "(not set, press w)" + A.reset),
-    row("key", s.uuid ? ellip(s.uuid, vw) : A.dim + "(not set, press u or g)" + A.reset),
+    row("server", s.workerUrl ? ellip(s.workerUrl, vw) : A.dim + "(not set, press e)" + A.reset),
+    row("key", s.uuid ? ellip(s.uuid, vw) : A.dim + "(not set, press e or g)" + A.reset),
     row("exit ip", s.exitIP ? A.teal + s.exitIP + A.reset : none),
     row("transport", `${A.dim}VLESS · WebSocket · TLS · :443${A.reset}`),
     ...(s.connected ? [
       row("traffic", `${A.green}↓${A.reset} ${fmtRate(s.downRate)}   ${A.teal}↑${A.reset} ${fmtRate(s.upRate)}   ${A.dim}${fmtBytes(s.totalBytes)}${A.reset}`),
       row("ping", s.latency != null ? `${latColor(s.latency)}${s.latency} ms${A.reset}  ${latBar(s.latency)}` : `${A.dim}measuring…${A.reset}`),
     ] : []),
-    ...(s.tunActive && s.tunKillSwitch ? [row("kill switch", `${A.amber}armed${A.reset} ${A.dim}- blocks traffic if the tunnel drops${A.reset}`)] : []),
+    ...(s.tunActive && s.tunKillSwitch ? [row("lockdown", `${A.amber}armed${A.reset} ${A.dim}- kill switch blocks traffic if the tunnel drops${A.reset}`)] : []),
     ...(s.tunActive && s.tunDns ? [row("dns", `${A.teal}tunnelled${A.reset} ${A.dim}- no plaintext DNS leak${A.reset}`)] : []),
     SEP,
   );
@@ -464,7 +468,7 @@ function shareConfig() {
 // Import a config from another instance by scanning its share QR (`x`) with the Mac camera.
 async function importFromCamera() {
   if (!scanSupported()) return setMsg(A.red + "Camera import is macOS-only in this version." + A.reset);
-  state.busy = true; state.busyText = "opening camera, point at the other Mac's QR (Esc cancels)…"; draw();
+  state.busy = true; state.busyText = "opening camera to scan the other Mac's QR…"; draw();
   let uri;
   try { uri = await scanQrViaCamera(); }
   catch (e) { state.busy = false; return setMsg(A.red + `Camera: ${e.message || e}` + A.reset); }
@@ -490,8 +494,8 @@ function startSocks(workerUrl, uuid, port) {
 }
 
 async function connect() {
-  if (!isWsUrl(state.workerUrl)) return setMsg(A.red + "Set a server address first (wss://…). Press w." + A.reset);
-  if (!isUuid(state.uuid)) return setMsg(A.red + "Set a valid access key first. Press u or g." + A.reset);
+  if (!isWsUrl(state.workerUrl)) return setMsg(A.red + "Set a server address first (wss://…). Press e." + A.reset);
+  if (!isUuid(state.uuid)) return setMsg(A.red + "Set a valid access key first. Press e or g." + A.reset);
   if (isDemo()) {  // recording mode: play the real connect animation, touch no network
     state.busy = true; state.busyText = "connecting…"; draw();
     await sleep(600);
@@ -582,10 +586,7 @@ async function healthTick() {
   if (!state.connected) return;
   if (state.busy || inPrompt || !socks) return scheduleHealth(Math.min(6000, HEALTH_OK_MS)); // defer during manual ops
   try {
-    const ip = await Promise.race([
-      getExitIP(state.socksPort),
-      new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 9000)),
-    ]);
+    const ip = await getExitIP(state.socksPort); // getExitIP enforces its own 9s timeout internally
     state.exitIP = ip; healthFails = 0;
     if (state.reconnecting) { state.reconnecting = false; setMsg(A.green + `Tunnel recovered, exits via ${ip}.` + A.reset); }
     // Full tunnel: getExitIP above rides the SOCKS loopback, which bypasses the utun. So ALSO verify
@@ -680,7 +681,7 @@ export function pingUrl(workerUrl, timeoutMs = 3000) {
 }
 function pingServer() { pingUrl(state.workerUrl).then((ms) => { state.latency = ms; }); }
 
-// Full-tunnel (TUN): true device-wide capture of all TCP via a utun, using our existing tunnel.
+// Full-tunnel (TUN): true device-wide capture of all TCP + UDP via a utun, using our existing tunnel.
 // Mutually exclusive with the system SOCKS proxy. Needs admin (one GUI prompt) and macOS.
 async function toggleTun() {
   if (isDemo()) {  // display-only in recording mode
@@ -689,22 +690,22 @@ async function toggleTun() {
     state.busy = true; state.busyText = "starting full tunnel…"; draw();
     await sleep(700);
     state.systemProxy = false; state.tunActive = true; state.busy = false;
-    return setMsg(A.green + "Full tunnel ON, every app's TCP now routes through the server." + A.reset + `  ${A.dim}(press f to turn off)${A.reset}`);
+    return setMsg(A.green + "Full tunnel ON, all your traffic (TCP + UDP) now routes through the server." + A.reset + `  ${A.dim}(press f to turn off)${A.reset}`);
   }
-  if (!tun.supported()) return setMsg(A.red + "Full tunnel is available on macOS and Linux only (Windows is coming)." + A.reset);
+  if (!tun.supported()) return setMsg(A.red + "Full tunnel is available on macOS and Linux only (Windows is planned)." + A.reset);
   if (state.tunActive) {
     state.busy = true; state.busyText = "turning off full tunnel…"; draw();
     const ok = await tun.stopTun();
     try { dnsFwd && dnsFwd.close(); } catch {} dnsFwd = null;
     state.tunActive = false; state.tunKillSwitch = false; state.tunDns = false; state.busy = false;
-    return setMsg(ok ? "Full tunnel off, networking restored." : A.red + "Couldn't confirm teardown. Check `node common/tun.js status`." + A.reset);
+    return setMsg(ok ? "Full tunnel off, networking restored." : A.red + "Couldn't confirm the full tunnel turned off - your traffic may still route through it. Press f again, or quit (q) to restore networking." + A.reset);
   }
   if (!state.connected) return setMsg(A.red + "Connect first. The full tunnel routes every app through the tunnel." + A.reset);
   if (state.systemProxy) { try { await setSocks(state.netService, false); } catch {} state.systemProxy = false; } // exclusive
   const ans = (await promptStart([
     `${A.amber}${A.bold}Full tunnel (device-wide TUN)${A.reset}`,
     ``,
-    `This captures ${A.bold}all TCP traffic${A.reset} from every app at the network layer -`,
+    `This captures ${A.bold}all traffic (TCP and UDP)${A.reset} from every app at the network layer -`,
     `the real VPN-style path, not the best-effort system proxy.`,
     ``,
     `• Needs ${A.bold}admin${A.reset} once (a macOS password dialog).`,
@@ -728,7 +729,7 @@ async function toggleTun() {
     saveConfig({ killSwitch });
     setMsg(A.green + (killSwitch
       ? "Full tunnel ON, kill switch armed - if the tunnel drops, traffic is blocked (no leak)."
-      : "Full tunnel ON, every app's TCP now routes through the server.") + (state.dnsTunnel ? " DNS is tunnelled too." : "") + A.reset + `  ${A.dim}(press f to turn off)${A.reset}`);
+      : "Full tunnel ON, all your traffic (TCP + UDP) now routes through the server.") + (state.dnsTunnel ? " DNS is tunnelled too." : "") + A.reset + `  ${A.dim}(press f to turn off)${A.reset}`);
   } catch (e) {
     try { dnsFwd && dnsFwd.close(); } catch {} dnsFwd = null;
     state.tunActive = false; state.tunKillSwitch = false; state.tunDns = false; state.busy = false;
@@ -739,7 +740,7 @@ async function toggleTun() {
 async function toggleSystemProxy() {
   if (isDemo()) {  // display-only in recording mode
     const turnOn = !state.systemProxy;
-    if (turnOn && !state.connected) return setMsg(A.red + "Connect first. Device-wide routes every app through the tunnel." + A.reset);
+    if (turnOn && !state.connected) return setMsg(A.red + "Connect first. The system proxy routes apps through the tunnel." + A.reset);
     if (turnOn) {
       state.busy = true; state.busyText = "enabling system proxy…"; draw();
       await sleep(500);
@@ -747,14 +748,14 @@ async function toggleSystemProxy() {
     }
     state.systemProxy = turnOn;
     return setMsg(turnOn
-      ? A.green + "Device-wide ON, every app now routes through the tunnel." + A.reset + `  ${A.dim}(press d to turn off before quitting)${A.reset}`
-      : "Device-wide off, apps use your normal connection again.");
+      ? A.green + "System proxy ON, apps that honor it now route through the tunnel." + A.reset + `  ${A.dim}(press d to turn off before quitting)${A.reset}`
+      : "System proxy off, apps use your normal connection again.");
   }
-  if (!sysproxySupported()) return setMsg(A.red + "Device-wide is macOS-only here. Set your OS proxy manually (press p)." + A.reset);
+  if (!sysproxySupported()) return setMsg(A.red + "System proxy is macOS-only here. Set your OS proxy manually (press p)." + A.reset);
   if (!state.netService) state.netService = await primaryService();
   if (!state.netService) return setMsg(A.red + "Couldn't find your network service." + A.reset);
   const turnOn = !state.systemProxy;
-  if (turnOn && !state.connected) return setMsg(A.red + "Connect first. Device-wide routes every app through the tunnel." + A.reset);
+  if (turnOn && !state.connected) return setMsg(A.red + "Connect first. The system proxy routes apps through the tunnel." + A.reset);
   if (turnOn && state.tunActive) { try { await tun.stopTun(); } catch {} state.tunActive = false; } // exclusive with full tunnel
   state.busy = true; state.busyText = turnOn ? "enabling system proxy (may ask for your password)…" : "disabling system proxy…"; draw();
   const ok = await setSocks(state.netService, turnOn, "127.0.0.1", state.socksPort || 1080);
@@ -762,8 +763,8 @@ async function toggleSystemProxy() {
   if (!ok) return setMsg(A.red + "Couldn't change the system proxy (cancelled or failed)." + A.reset);
   state.systemProxy = turnOn;
   setMsg(turnOn
-    ? A.green + "Device-wide ON, every app now routes through the tunnel." + A.reset + `  ${A.dim}(press d to turn off before quitting)${A.reset}`
-    : "Device-wide off, apps use your normal connection again.");
+    ? A.green + "System proxy ON, apps that honor it now route through the tunnel." + A.reset + `  ${A.dim}(press d to turn off before quitting)${A.reset}`
+    : "System proxy off, apps use your normal connection again.");
 }
 
 async function test() {
@@ -950,7 +951,7 @@ function adoptMachine(m) {
 
 async function saveMachine() {
   if (!isWsUrl(state.workerUrl) || !isUuid(state.uuid)) {
-    return setMsg(A.red + "Set a server + key first (press w and u), then save." + A.reset);
+    return setMsg(A.red + "Set a server + key first (press e), then save." + A.reset);
   }
   const desc = (await promptLine("Name this machine (e.g. home VM, demo)", "")).trim();
   const list = Array.isArray(state.machines) ? state.machines.slice() : [];
@@ -1067,11 +1068,12 @@ async function importConfig() {
   const { patch, addedMachines, addedFriends } = planImport(state, imp);
   Object.assign(state, patch);
   saveConfig(patch);
+  if (!addedMachines && !addedFriends) return setMsg(A.green + "Backup read - nothing new to add (already up to date)." + A.reset);
   return setMsg(A.green + `Imported +${addedMachines} machine${addedMachines === 1 ? "" : "s"}${addedFriends ? `, +${addedFriends} friend${addedFriends === 1 ? "" : "s"}` : ""}.` + A.reset + ` ${A.dim}Press m to pick one, then c to connect.${A.reset}`);
 }
 
 // One place to set the connection: paste a link (which carries both endpoint + key), scan a QR, or
-// set the server / key by hand. Replaces the separate w / u / i keys.
+// set the server / key by hand.
 async function details() {
   const lines = [
     `${A.amber}${A.bold}Connection details${A.reset}`, ``,
@@ -1113,12 +1115,14 @@ async function importLink() {
 
 async function setServer() {
   const v = await promptLine("Server address (wss://your-domain or wss://<ip>.sslip.io)", state.workerUrl);
+  if (v && !isWsUrl(v)) return setMsg(A.red + "Server address must start with wss:// (or ws://). Not saved." + A.reset);
   state.workerUrl = v || ""; saveConfig({ workerUrl: state.workerUrl });
   return setMsg(state.workerUrl ? "Saved server address." : "Cleared server address.");
 }
 
 async function setKey() {
   const v = await promptLine("Access key (UUID): paste it", state.uuid);
+  if (v && !isUuid(v)) return setMsg(A.red + "That doesn't look like an access key - it should be a UUID. Not saved." + A.reset);
   state.uuid = v || ""; saveConfig({ uuid: state.uuid });
   return setMsg(state.uuid ? "Saved access key." : "Cleared access key.");
 }
@@ -1146,7 +1150,7 @@ async function friends() {
   if (rev) return revokeFriend(Number(rev[1]) - 1);
   const num = Number(ans);
   if (Number.isInteger(num) && num >= 1 && num <= list.length) return showFriend(num - 1);
-  return setMsg(A.red + "Didn't recognize that - a add, N show, rN revoke." + A.reset);
+  return setMsg(A.red + "Didn't recognize that - a to add, N to show, rN to revoke." + A.reset);
 }
 
 // Re-display a friend's config (their key + your endpoint) as a QR/link to re-send or re-copy.
@@ -1350,7 +1354,7 @@ function main() {
     state.netService = await primaryService();
     state.systemProxy = await socksEnabled(state.netService);
     if (state.systemProxy && !state.connected) {
-      state.msg = A.red + "Device-wide proxy is ON but not connected. Press c to connect, or d to turn it off." + A.reset;
+      state.msg = A.red + "System proxy is ON but not connected. Press c to connect, or d to turn it off." + A.reset;
     }
     // A leftover TUN session from a crashed run would strand traffic - surface it so f turns it off.
     if (tun.supported() && await tun.isActive().catch(() => false)) {
@@ -1481,7 +1485,8 @@ function printCliHelp() {
     `  collateral down       stop the background tunnel\n` +
     `  collateral status     tunnel status + exit IP  (exit 0 = up, non-zero = down)\n` +
     `  collateral doctor     run the connection health check\n\n` +
-    `Set up your server once in the app; config lives in ~/.collateral-config.json.\n`);
+    `Set up your server once in the app; config lives in ~/.collateral-config.json.\n` +
+    `Env: COLLATERAL_SOCKS_PORT overrides the local SOCKS port (default 1080).\n`);
   process.exit(0);
 }
 
