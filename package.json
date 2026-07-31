@@ -1,6 +1,6 @@
 {
   "name": "getcollateral",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "A private tunnel you own end-to-end: provisions a stealth proxy (VLESS over WebSocket-in-TLS, looks like plain HTTPS) on your own free cloud VM, controlled from your terminal.",
   "type": "module",
   "bin": {
