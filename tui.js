@@ -864,6 +864,7 @@ async function setupVps() {
   const user = await promptLine("SSH username (ubuntu for Ubuntu, opc for Oracle Linux)", state.vpsUser || "ubuntu");
   const keyRaw = await promptLine("Path to your SSH private key", state.vpsKey || `${os.homedir()}/.ssh/id_rsa`);
   const keyPath = keyRaw.replace(/^~(?=$|\/)/, os.homedir());
+  if (!keyPath || !fs.existsSync(keyPath)) { draw(); return setMsg(A.red + `No SSH key file at ${keyRaw || "(empty)"} - check the path and try again (Oracle downloads it as a .key, usually in ~/Downloads).` + A.reset); }
   const domainRaw = await promptLine("Custom domain (A record → this VM), or enter for automatic sslip.io", state.vpsDomain || "");
   const domain = (domainRaw || "").trim();
   saveConfig({ vpsHost: host, vpsUser: user, vpsKey: keyRaw, vpsDomain: domain });
