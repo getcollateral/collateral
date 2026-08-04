@@ -18,6 +18,7 @@ import { FrameParser, encodeFrame, OPCODES } from "./common/ws-frame.js";
 import { renderFrame, hitTest, fmtBytes, latLevel, pickFastest, mergeBy, buildBackup, planImport, semverGt } from "./tui.js";
 import { parseEndpoint } from "./common/doctor.js";
 import { parseKeys } from "./worker-shim.js";
+import { siteNames } from "./provision/vps.js";
 import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun, parseLinuxDefaultRoute, parseResolvConf, parseResolvectl, firstFreeTun, pfKillSwitchRules, iptablesKillSwitchSetup, iptablesKillSwitchTeardown, iptablesDnsRedirect, iptablesDnsRedirectTeardown } from "./common/tun.js";
 import { aptHint } from "./provision/vps.js";
 import { socksUdpWrap, socksUdpUnwrap } from "./common/dns.js";
@@ -437,4 +438,35 @@ test("TUI: setup view lists provisioning steps with state", () => {
   assert.match(f, /first-time setup/);
   assert.match(f, /Connect over SSH/);
   assert.match(f, /Upload the server/);
+});
+
+// Reading which names a Caddyfile serves. This is what stops setup silently re-homing a
+// working server: get it wrong and every link already shared dies without a word.
+test("siteNames reads the domains a Caddyfile serves", () => {
+  const global = "{\n  auto_https disable_redirects\n}\n";
+
+  // One name, which is what setup writes for a fresh VM.
+  assert.deepEqual(
+    siteNames(global + "137.23.22.36.sslip.io {\n  reverse_proxy localhost:8787\n}\n"),
+    ["137.23.22.36.sslip.io"],
+  );
+
+  // Several, which is what it writes when keeping an existing name alongside a new one.
+  assert.deepEqual(
+    siteNames(global + "reflector1.example.com, 1.2.3.4.sslip.io {\n  reverse_proxy localhost:8787\n}\n"),
+    ["reflector1.example.com", "1.2.3.4.sslip.io"],
+  );
+
+  // The global options block is also a line ending in "{" and must not be read as a site.
+  assert.deepEqual(siteNames(global), []);
+
+  // No Caddy at all: a fresh VM, which must look different from a configured one.
+  assert.deepEqual(siteNames(""), []);
+  assert.deepEqual(siteNames(null), []);
+
+  // Directives inside a block have no dot and are not site names.
+  assert.deepEqual(
+    siteNames(global + "example.com {\n  handle_path /x/* {\n    respond 200\n  }\n}\n"),
+    ["example.com"],
+  );
 });

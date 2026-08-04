@@ -215,7 +215,43 @@ export async function listKeys({ host, user = "ubuntu", keyPath }) {
 // Provision the VM and return the client endpoint. onStep(name, status, note) drives the UI.
 // Pass `uuid` to install a specific access key (the client key is the source of truth, so a
 // redeploy uploads it and stays in sync); omit it for a brand-new setup to mint a fresh one.
-export async function provisionVps({ host, user = "ubuntu", keyPath, uuid: keyArg, domain: customDomain, onStep = () => {}, log = () => {} }) {
+// What a VM already serves, read WITHOUT changing anything. Setup used to overwrite a working
+// server's domain silently: with the domain left blank it rewrote the Caddyfile to
+// `<ip>.sslip.io`, Caddy stopped serving the original name, and every link already shared died
+// at once. The symptom points nowhere near the cause - port 443 still accepts TCP, so the box
+// looks alive, and only the TLS handshake fails. So look first, and let the caller decide.
+// Returns { domains, running } or null when there is nothing there (the fresh-VM case).
+export async function inspectVps({ host, user = "ubuntu", keyPath }) {
+  let out = "";
+  try {
+    const r = await ssh(host, user, keyPath, "cat /etc/caddy/Caddyfile 2>/dev/null; echo '---'; systemctl is-active collateral 2>/dev/null || true", null, 25000);
+    out = r.stdout || "";
+  } catch { return null; }
+  const [caddyfile = "", tail = ""] = out.split("---");
+  const running = /\bactive\b/.test(tail);
+  const domains = siteNames(caddyfile);
+  return domains.length || running ? { domains, running } : null;
+}
+
+// The names a Caddyfile serves. A site line is `name[, name...] {`; the global options block is
+// also a line ending in `{` but is exactly "{", so skipping brace-only lines separates them
+// without needing a parser.
+export function siteNames(caddyfile) {
+  const names = [];
+  for (const raw of String(caddyfile || "").split("\n")) {
+    const line = raw.trim();
+    if (!line.endsWith("{") || line === "{") continue;
+    const head = line.slice(0, -1).trim();
+    if (!head) continue;
+    for (const part of head.split(",")) {
+      const name = part.trim();
+      if (name.includes(".") && !name.startsWith("#")) names.push(name);
+    }
+  }
+  return names;
+}
+
+export async function provisionVps({ host, user = "ubuntu", keyPath, uuid: keyArg, domain: customDomain, alsoServe = [], onStep = () => {}, log = () => {} }) {
   onStep("connect", "run");
   log(`[connect] ssh ${user}@${host}\n`);
   try { await ssh(host, user, keyPath, "true", null, 20000); }
@@ -243,7 +279,13 @@ export async function provisionVps({ host, user = "ubuntu", keyPath, uuid: keyAr
   const uuid = isUuid(keyArg) ? keyArg : crypto.randomUUID();
   log(isUuid(keyArg) ? "using your existing access key\n" : "minting a new access key\n");
   const wsPath = "/" + crypto.randomBytes(6).toString("hex");
-  log(`domain: ${domain}\n`);
+  // Keep any name the VM already served. Caddy takes a comma-separated site list, so serving
+  // the old name alongside the new one costs nothing and means links already handed out keep
+  // working through a re-run of setup.
+  const extras = (Array.isArray(alsoServe) ? alsoServe : [])
+    .map((d) => normalizeDomain(d)).filter((d) => d && d !== domain);
+  const siteList = [domain, ...extras].join(", ");
+  log(`domain: ${domain}${extras.length ? ` (also serving ${extras.join(", ")})` : ""}\n`);
 
   onStep("upload", "run");
   log("\n[upload] sending server.mjs\n");
@@ -254,7 +296,7 @@ export async function provisionVps({ host, user = "ubuntu", keyPath, uuid: keyAr
   log("\n[install] running setup on the VM:\n");
   let out;
   try {
-    out = await ssh(host, user, keyPath, "bash -s", setupScript({ uuid, domain }), 600000, log);
+    out = await ssh(host, user, keyPath, "bash -s", setupScript({ uuid, domain: siteList }), 600000, log);
   } catch (e) {
     const blob = (e.stdout || "") + (e.stderr || "");
     if (/COLLATERAL_NEED_NOPASSWD_SUDO/.test(blob)) throw new Error(`${user}@${host} needs passwordless sudo (ubuntu/opc users have it).`);

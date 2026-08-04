@@ -20,7 +20,7 @@ import { startClient } from "./client.js";
 import { startDnsForwarder } from "./common/dns.js";
 import { getExitIP } from "./common/probe.js";
 import { loadConfig, saveConfig } from "./common/store.js";
-import { provisionVps, addKey, removeKey } from "./provision/vps.js";
+import { provisionVps, inspectVps, normalizeDomain, addKey, removeKey } from "./provision/vps.js";
 import { setSocks, socksEnabled, primaryService, supported as sysproxySupported } from "./common/sysproxy.js";
 import * as tun from "./common/tun.js";
 import { qrToTerminal } from "./common/qr.js";
@@ -865,8 +865,36 @@ async function setupVps() {
   const keyRaw = await promptLine("Path to your SSH private key", state.vpsKey || `${os.homedir()}/.ssh/id_rsa`);
   const keyPath = keyRaw.replace(/^~(?=$|\/)/, os.homedir());
   if (!keyPath || !fs.existsSync(keyPath)) { draw(); return setMsg(A.red + `No SSH key file at ${keyRaw || "(empty)"} - check the path and try again (Oracle downloads it as a .key, usually in ~/Downloads).` + A.reset); }
-  const domainRaw = await promptLine("Custom domain (A record → this VM), or enter for automatic sslip.io", state.vpsDomain || "");
+  // Look at the VM before offering a domain. Setup used to overwrite a working server's name
+  // without a word: leaving this blank rewrote the Caddyfile to <ip>.sslip.io, Caddy stopped
+  // serving the original name, and every link already shared died. Blank is the right default
+  // for a fresh VM and the wrong one here, and only the VM can tell you which this is.
+  state.busy = true; state.busyText = "checking what's already on the VM…"; draw();
+  let existing = null;
+  try { existing = await inspectVps({ host, user, keyPath }); } catch {}
+  state.busy = false; draw();
+
+  const existingDomains = (existing && existing.domains) || [];
+  if (existingDomains.length) {
+    setMsg(A.teal + `This VM already serves ${existingDomains.join(", ")}.` + A.reset);
+  }
+  // Default to the name it already uses, not to blank.
+  const domainDefault = state.vpsDomain || existingDomains[0] || "";
+  const domainRaw = await promptLine("Custom domain (A record → this VM), or enter for automatic sslip.io", domainDefault);
   const domain = (domainRaw || "").trim();
+
+  // Anything it served that we are not about to serve would stop working. Keep it by default;
+  // Caddy takes a comma-separated site list, so this costs nothing.
+  const planned = normalizeDomain(domain) || `${host}.sslip.io`;
+  const dropped = existingDomains.filter((d) => normalizeDomain(d) !== planned);
+  let alsoServe = dropped;
+  if (dropped.length) {
+    const keep = (await promptLine(`Also keep serving ${dropped.join(", ")}? Links already shared use it (yes/no)`, "yes")).trim().toLowerCase();
+    if (keep === "no" || keep === "n") {
+      alsoServe = [];
+      setMsg(A.red + `Links using ${dropped.join(" or ")} will stop working.` + A.reset);
+    }
+  }
   saveConfig({ vpsHost: host, vpsUser: user, vpsKey: keyRaw, vpsDomain: domain });
   Object.assign(state, { vpsHost: host, vpsUser: user, vpsKey: keyRaw, vpsDomain: domain });
 
@@ -878,7 +906,7 @@ async function setupVps() {
   try { fs.writeFileSync(logFile, ""); } catch {}
   try {
     const res = await provisionVps({
-      host, user, keyPath, domain: domain || undefined,
+      host, user, keyPath, domain: domain || undefined, alsoServe,
       uuid: isUuid(state.uuid) ? state.uuid : undefined, // keep the client key as source of truth - upload it
       log: (m) => { try { fs.appendFileSync(logFile, m); } catch {} },
       onStep: (name, status, note) => {
