@@ -11,7 +11,6 @@
     "tui.js",
     "client.js",
     "worker-shim.js",
-    "ui-server.js",
     "common/",
     "provision/",
     "mac/"
@@ -22,7 +21,6 @@
   "scripts": {
     "start": "node tui.js",
     "tui": "node tui.js",
-    "ui": "node ui-server.js",
     "demo": "node run-demo.js",
     "test": "node --test",
     "server": "node worker-shim.js",
