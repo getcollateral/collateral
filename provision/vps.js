@@ -147,8 +147,16 @@ ${domain} {
 # open 80 (ACME challenge) + 443 on the instance's own firewall
 if have firewall-cmd; then sudo firewall-cmd --add-port=80/tcp --add-port=443/tcp --permanent && sudo firewall-cmd --reload
 else
-  sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null || true
-  sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null || true
+  # Keep established connections, and add it FIRST. netfilter-persistent save re-applies the
+  # ruleset as it writes it, and without this rule that re-apply kills every open connection,
+  # including the SSH session running this very script. The install completed and then severed
+  # the line reporting it, so setup looked like it had failed when it had not.
+  add_rule() { sudo iptables -C INPUT $@ 2>/dev/null || sudo iptables -I INPUT $@ 2>/dev/null || true; }
+  add_rule -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  # -C before -I, so re-running setup does not stack another identical pair every time. Four
+  # copies of each rule had accumulated on a box provisioned four times.
+  add_rule -p tcp --dport 80 -j ACCEPT
+  add_rule -p tcp --dport 443 -j ACCEPT
   if have netfilter-persistent; then sudo netfilter-persistent save
   elif [ -d /etc/iptables ]; then sudo sh -c 'iptables-save > /etc/iptables/rules.v4'
   else sudo sh -c 'iptables-save > /etc/sysconfig/iptables' 2>/dev/null || true; fi
