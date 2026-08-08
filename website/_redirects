@@ -1,0 +1,16 @@
+# Cloudflare Pages redirects.
+#
+# /download/mac is the link the page and any post or email should use. This file is the single
+# place the current version appears, so cutting a release means editing one line here rather
+# than hunting through markup for a hardcoded filename.
+#
+# 302 rather than 301 on purpose: the target moves with every release, and a permanent redirect
+# would be cached by browsers long after it stopped being true.
+#
+# The DMG itself is served from the update feed, which already hosts the notarized, stapled
+# artifact that Sparkle hands to existing installs. Serving a second copy from here would mean
+# two files that can drift apart, and the one people download first would be the one nobody
+# checks.
+
+/download/mac    https://updates.getcollateral.xyz/Collateral-1.1.4.dmg   302
+/buy             https://tkls.gumroad.com/l/collateral                    302

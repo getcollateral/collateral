@@ -4,12 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Collateral: a private tunnel you own end to end</title>
-<meta name="description" content="Collateral stands up a stealth proxy on your own free cloud VM and routes your whole machine through it, from your terminal, in about two minutes. Open source, VLESS over WebSocket over TLS on :443.">
+<meta name="description" content="Collateral stands up a stealth proxy on your own free cloud VM and routes your whole machine through it in about two minutes. Free open-source terminal app, or a native Mac app for $15. VLESS over WebSocket over TLS on :443.">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta property="og:title" content="Collateral: the open internet, on infrastructure you own">
-<meta property="og:description" content="A private tunnel you own end to end. Stealth proxy on your own free VM, looks like plain HTTPS, driven from your terminal.">
+<meta property="og:description" content="A private tunnel you own end to end. Stealth proxy on your own free VM, looks like plain HTTPS. Free in the terminal, or a native Mac app.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://getcollateral.xyz">
+<meta property="og:image" content="https://getcollateral.xyz/img/mac-status.jpg">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#0A0A0C">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -83,6 +85,7 @@ h1,h2,h3,.faq-q,.btn-amber,.btn-out,.fl,.nl,.lc{text-transform:lowercase}
       <a href="#why" class="nl" style="color:#B4B4B8">why</a>
       <a href="#how" class="nl" style="color:#B4B4B8">how it works</a>
       <a href="#features" class="nl" style="color:#B4B4B8">features</a>
+      <a href="#mac" class="nl" style="color:#B4B4B8">mac app</a>
       <a href="#stealth" class="nl" style="color:#B4B4B8">stealth</a>
       <a href="#start" class="nl" style="color:#B4B4B8">get started</a>
       <a href="#faq" class="nl" style="color:#B4B4B8">faq</a>
@@ -111,6 +114,7 @@ h1,h2,h3,.faq-q,.btn-amber,.btn-out,.fl,.nl,.lc{text-transform:lowercase}
         <a href="https://github.com/getcollateral/collateral" target="_blank" rel="noopener" class="btn-out" style="display:inline-flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-weight:500;font-size:14px;color:#E6E6E6;border:1px solid rgba(230,230,230,.22);border-radius:8px;padding:12px 18px">View source <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px"><path d="M7 17 17 7"/><path d="M9 7h8v8"/></svg></a>
       </div>
       <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A8A8A;letter-spacing:.02em">no account &#183; no subscription &#183; macOS + Linux today</div>
+      <div style="font-size:13.5px;color:#8A8A8A;line-height:1.55">Rather not live in a terminal? <a href="#mac">Collateral for Mac</a> is a native app with the same tunnel underneath. Free for 7 days, then $15 once.</div>
     </div>
   </div>
   <div style="flex:1 1 400px;min-width:300px;display:flex;justify-content:center">
@@ -294,6 +298,75 @@ h1,h2,h3,.faq-q,.btn-amber,.btn-out,.fl,.nl,.lc{text-transform:lowercase}
 
 <div style="height:1px;background:rgba(230,230,230,.08);max-width:1200px;margin:0 auto"></div>
 
+<section id="mac" style="max-width:1200px;margin:0 auto;width:100%;padding:clamp(60px,8vw,110px) clamp(20px,5vw,64px)">
+  <div style="display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;text-transform:lowercase;color:#00AFAF"><span style="width:8px;height:8px;background:#FFAF00;display:inline-block"></span>Mac app</div>
+  <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:clamp(28px,3.8vw,44px);line-height:1.08;letter-spacing:-.025em;margin:16px 0 0;color:#fff;max-width:24ch">The same tunnel, without the terminal.</h2>
+  <p style="margin:18px 0 0;font-size:clamp(15px,1.5vw,17px);line-height:1.65;color:#B4B4B8;max-width:66ch">Collateral for Mac is a native app: a menu bar toggle, a real window, and a system network extension that carries every app on the machine. It builds the server for you over SSH, hands out and revokes keys for friends, and tells you which part is broken when something is. The terminal app stays free and open source; this is for people who would rather click.</p>
+
+  <div style="margin-top:36px;display:flex;flex-direction:column;gap:18px">
+    <figure style="margin:0">
+      <div style="border:1px solid rgba(230,230,230,.1);border-radius:12px;overflow:hidden;background:#0D0F13;box-shadow:0 30px 80px -40px rgba(0,0,0,.9)">
+        <img src="img/mac-status.jpg" alt="The Status pane: tunnel connected, latency, and this session's traffic broken down by app." width="1400" height="903" loading="lazy" decoding="async" style="display:block;width:100%;height:auto">
+      </div>
+      <figcaption style="margin-top:11px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#6C6E76;line-height:1.5">Status &#183; what is connected, how fast, and which apps are actually using it.</figcaption>
+    </figure>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px">
+      <figure style="margin:0">
+        <div style="border:1px solid rgba(230,230,230,.1);border-radius:12px;overflow:hidden;background:#0D0F13">
+          <img src="img/mac-setup.jpg" alt="The setup sheet working through connecting over SSH, uploading the server, installing, and issuing an HTTPS certificate." width="1400" height="903" loading="lazy" decoding="async" style="display:block;width:100%;height:auto">
+        </div>
+        <figcaption style="margin-top:11px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#6C6E76;line-height:1.5">Setup &#183; point it at a bare VM and watch it build the thing.</figcaption>
+      </figure>
+      <figure style="margin:0">
+        <div style="border:1px solid rgba(230,230,230,.1);border-radius:12px;overflow:hidden;background:#0D0F13">
+          <img src="img/mac-diagnostics.jpg" alt="Diagnostics listing configuration, internet, server address, port 443, certificate, and tunnel checks, all passing." width="1400" height="903" loading="lazy" decoding="async" style="display:block;width:100%;height:auto">
+        </div>
+        <figcaption style="margin-top:11px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#6C6E76;line-height:1.5">Diagnostics &#183; every link in the chain checked separately, so you know which one failed.</figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <div style="margin-top:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1px;background:rgba(230,230,230,.09);border:1px solid rgba(230,230,230,.09);border-radius:12px;overflow:hidden">
+    <div style="background:#0C0E12;padding:26px 24px 28px;display:flex;flex-direction:column;gap:12px">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;text-transform:lowercase;color:#FFAF00">Every app, not just the browser</span>
+      <p style="margin:0;font-size:14.5px;line-height:1.6;color:#8A8A8A">A system network extension, so TCP and UDP both go through it. A kill switch stops traffic leaking if the tunnel drops.</p>
+    </div>
+    <div style="background:#0C0E12;padding:26px 24px 28px;display:flex;flex-direction:column;gap:12px">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;text-transform:lowercase;color:#FFAF00">Runs your servers</span>
+      <p style="margin:0;font-size:14.5px;line-height:1.6;color:#8A8A8A">Set up a new VM, keep several and switch between them, rotate a key everywhere at once, and hand friends their own key you can revoke later.</p>
+    </div>
+    <div style="background:#0C0E12;padding:26px 24px 28px;display:flex;flex-direction:column;gap:12px">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;text-transform:lowercase;color:#FFAF00">Says what is actually wrong</span>
+      <p style="margin:0;font-size:14.5px;line-height:1.6;color:#8A8A8A">Diagnostics test each hop on its own, and the status never claims to be connected when nothing can get through.</p>
+    </div>
+  </div>
+
+  <div style="margin-top:26px;background:#0D0F13;border:1px solid rgba(0,175,175,.22);border-radius:12px;padding:clamp(24px,3vw,36px);display:flex;gap:32px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+    <div style="flex:1 1 320px;min-width:280px">
+      <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+        <span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:clamp(32px,4vw,42px);letter-spacing:-.02em;color:#fff;line-height:1">$15</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;letter-spacing:.06em;color:#8A8A8A">USD &#183; one time &#183; not a subscription</span>
+      </div>
+      <p style="margin:14px 0 0;font-size:14.5px;line-height:1.6;color:#B4B4B8;max-width:46ch">Free for 7 days, no card and no account. One purchase covers every Mac you own and every future version.</p>
+      <div style="margin-top:16px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#6C6E76;line-height:1.75">
+        <div>macOS 15 or later &#183; Apple silicon + Intel</div>
+        <div>signed and notarized by Apple</div>
+        <div>bring your own VM, the free tier is plenty</div>
+      </div>
+    </div>
+    <div style="flex:0 1 auto;display:flex;flex-direction:column;gap:12px;min-width:220px">
+      <a href="/download/mac" class="btn-amber" style="display:inline-flex;align-items:center;justify-content:center;gap:9px;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px;color:#0A0A0C;background:#FFAF00;border:1px solid #FFAF00;border-radius:8px;padding:13px 22px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v13"/><path d="m7 12 5 5 5-5"/><path d="M4 21h16"/></svg>
+        Download the trial
+      </a>
+      <a href="https://tkls.gumroad.com/l/collateral" target="_blank" rel="noopener" class="btn-out" style="display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:'JetBrains Mono',monospace;font-weight:500;font-size:14px;color:#E6E6E6;border:1px solid rgba(230,230,230,.22);border-radius:8px;padding:13px 20px">Buy a licence <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px"><path d="M7 17 17 7"/><path d="M9 7h8v8"/></svg></a>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#6C6E76;text-align:center;line-height:1.5">drag it to Applications when it opens</span>
+    </div>
+  </div>
+</section>
+
+<div style="height:1px;background:rgba(230,230,230,.08);max-width:1200px;margin:0 auto"></div>
+
 <section id="stealth" style="max-width:1200px;margin:0 auto;width:100%;padding:clamp(60px,8vw,110px) clamp(20px,5vw,64px)">
   <div style="display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;text-transform:lowercase;color:#00AFAF"><span style="width:8px;height:8px;background:#FFAF00;display:inline-block"></span>On the wire</div>
   <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:clamp(28px,3.8vw,44px);line-height:1.08;letter-spacing:-.025em;margin:16px 0 0;color:#fff;max-width:24ch">It looks like a website. On the wire, it is one.</h2>
@@ -365,10 +438,26 @@ h1,h2,h3,.faq-q,.btn-amber,.btn-out,.fl,.nl,.lc{text-transform:lowercase}
 
     <div class="faq-item open" style="border-top:1px solid rgba(230,230,230,.1)">
       <button type="button" class="faq-btn" style="width:100%;display:flex;align-items:center;gap:15px;padding:20px 4px;background:none;border:0;cursor:pointer;text-align:left;color:#E6E6E6">
-        <span class="faq-marker" style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#FFAF00;font-weight:700;flex:0 0 auto;width:26px">[&#8211;]</span>
+        <span class="faq-marker" style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#FFAF00;font-weight:700;flex:0 0 auto;width:26px">[-]</span>
         <span class="faq-q" style="font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:clamp(16px,1.7vw,19px);flex:1;line-height:1.3">Is it free?</span>
       </button>
-      <div class="faq-a" style="padding:0 4px 24px 41px;font-size:15px;line-height:1.65;color:#B4B4B8;max-width:70ch">Yes. Collateral runs on an Oracle Cloud Always-Free ARM VM (free forever), and the app itself is open source. No subscription, no metering, no card on file.</div>
+      <div class="faq-a" style="padding:0 4px 24px 41px;font-size:15px;line-height:1.65;color:#B4B4B8;max-width:70ch">The terminal app is free and open source, and the server it builds for you runs on an Oracle Cloud Always-Free ARM VM, free forever. The Mac app is $15 once, free for the first 7 days with no card and no account. Nothing here is a subscription, and there is no metering.</div>
+    </div>
+
+    <div class="faq-item" style="border-top:1px solid rgba(230,230,230,.1)">
+      <button type="button" class="faq-btn" style="width:100%;display:flex;align-items:center;gap:15px;padding:20px 4px;background:none;border:0;cursor:pointer;text-align:left;color:#E6E6E6">
+        <span class="faq-marker" style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#FFAF00;font-weight:700;flex:0 0 auto;width:26px">[+]</span>
+        <span class="faq-q" style="font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:clamp(16px,1.7vw,19px);flex:1;line-height:1.3">What do I get for the $15?</span>
+      </button>
+      <div class="faq-a" style="display:none;padding:0 4px 24px 41px;font-size:15px;line-height:1.65;color:#B4B4B8;max-width:70ch">The native Mac app: menu bar toggle, kill switch, live traffic by app, server setup and key management from a window instead of a prompt, and diagnostics that isolate which hop is broken. One purchase covers every Mac you own and every future version. The tunnel itself is the same one the free terminal app builds, so you are paying for the app, not for access.</div>
+    </div>
+
+    <div class="faq-item" style="border-top:1px solid rgba(230,230,230,.1)">
+      <button type="button" class="faq-btn" style="width:100%;display:flex;align-items:center;gap:15px;padding:20px 4px;background:none;border:0;cursor:pointer;text-align:left;color:#E6E6E6">
+        <span class="faq-marker" style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#FFAF00;font-weight:700;flex:0 0 auto;width:26px">[+]</span>
+        <span class="faq-q" style="font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:clamp(16px,1.7vw,19px);flex:1;line-height:1.3">What happens when the trial ends?</span>
+      </button>
+      <div class="faq-a" style="display:none;padding:0 4px 24px 41px;font-size:15px;line-height:1.65;color:#B4B4B8;max-width:70ch">The app stops starting new connections until you enter a key. It does not cut a tunnel that is already running, and it never touches your server, your keys, or your config, all of which stay exactly where they are. The free terminal app keeps working with the same server regardless.</div>
     </div>
 
     <div class="faq-item" style="border-top:1px solid rgba(230,230,230,.1)">
@@ -384,7 +473,7 @@ h1,h2,h3,.faq-q,.btn-amber,.btn-out,.fl,.nl,.lc{text-transform:lowercase}
         <span class="faq-marker" style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#FFAF00;font-weight:700;flex:0 0 auto;width:26px">[+]</span>
         <span class="faq-q" style="font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:clamp(16px,1.7vw,19px);flex:1;line-height:1.3">What platforms does it run on?</span>
       </button>
-      <div class="faq-a" style="display:none;padding:0 4px 24px 41px;font-size:15px;line-height:1.65;color:#B4B4B8;max-width:70ch">The terminal app runs in any terminal on macOS, Linux, and Windows. Full device-wide capture (routing every app through the tunnel) is on macOS and Linux today; Windows is on the way.</div>
+      <div class="faq-a" style="display:none;padding:0 4px 24px 41px;font-size:15px;line-height:1.65;color:#B4B4B8;max-width:70ch">The terminal app runs in any terminal on macOS, Linux, and Windows. Full device-wide capture (routing every app through the tunnel) is on macOS and Linux today; Windows is on the way. There is also a <a href="#mac">native Mac app</a> for macOS 15 and later, on Apple silicon and Intel.</div>
     </div>
 
     <div class="faq-item" style="border-top:1px solid rgba(230,230,230,.1)">
@@ -425,6 +514,7 @@ h1,h2,h3,.faq-q,.btn-amber,.btn-out,.fl,.nl,.lc{text-transform:lowercase}
         <span style="color:#6C6E76;letter-spacing:.12em;text-transform:lowercase;font-size:11px">project</span>
         <a href="https://github.com/getcollateral/collateral" target="_blank" rel="noopener" class="fl" style="color:#B4B4B8;display:inline-flex;align-items:center;gap:5px">GitHub <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"/><path d="M9 7h8v8"/></svg></a>
         <a href="#start" class="fl" style="color:#B4B4B8">Get started</a>
+        <a href="#mac" class="fl" style="color:#B4B4B8">Mac app</a>
         <a href="#faq" class="fl" style="color:#B4B4B8">FAQ</a>
       </div>
       <div style="display:flex;flex-direction:column;gap:11px">
@@ -432,6 +522,7 @@ h1,h2,h3,.faq-q,.btn-amber,.btn-out,.fl,.nl,.lc{text-transform:lowercase}
         <a href="#how" class="fl" style="color:#B4B4B8">How it works</a>
         <a href="#stealth" class="fl" style="color:#B4B4B8">Stealth transport</a>
         <a href="#features" class="fl" style="color:#B4B4B8">Features</a>
+        <a href="https://tkls.gumroad.com/l/collateral" target="_blank" rel="noopener" class="fl" style="color:#B4B4B8;display:inline-flex;align-items:center;gap:5px">Buy for Mac <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"/><path d="M9 7h8v8"/></svg></a>
       </div>
     </div>
   </div>
@@ -463,7 +554,7 @@ document.querySelectorAll('.faq-item').forEach(function(item){
   btn.addEventListener('click',function(){
     var open=item.classList.toggle('open');
     a.style.display=open?'block':'none';
-    m.textContent=open?'[–]':'[+]';
+    m.textContent=open?'[-]':'[+]';
   });
 });
 // current year
