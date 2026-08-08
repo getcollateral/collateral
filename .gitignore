@@ -22,3 +22,6 @@ CleanShot*.png
 
 # npm pack output
 *.tgz
+
+# wrangler deploy cache, written by "wrangler pages deploy"
+.wrangler/
