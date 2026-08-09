@@ -21,7 +21,7 @@ import { startDnsForwarder } from "./common/dns.js";
 import { getExitIP } from "./common/probe.js";
 import { loadConfig, saveConfig } from "./common/store.js";
 import { provisionVps, inspectVps, normalizeDomain, addKey, removeKey } from "./provision/vps.js";
-import { setSocks, socksEnabled, primaryService, supported as sysproxySupported } from "./common/sysproxy.js";
+import { setSocks, setSocksOffSync, socksEnabled, primaryService, supported as sysproxySupported } from "./common/sysproxy.js";
 import * as tun from "./common/tun.js";
 import { qrToTerminal } from "./common/qr.js";
 import { vlessUriFromConfig, parseVlessUri } from "./common/config.js";
@@ -82,6 +82,19 @@ const isUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 const DEMO_UUID = "00000000-0000-0000-0000-000000000000";
 const DEMO_EXIT_IP = "203.0.113.42"; // RFC 5737 documentation range - obviously not a real host
 const isDemo = () => state.uuid === DEMO_UUID;
+
+// Whether the tunnel currently up was STARTED in demo mode.
+//
+// isDemo() reads the live key, which is the right question for "should this pane show fake
+// numbers" and the wrong one for "is there anything real to tear down". The key can change
+// while a tunnel is running - switching machines, editing the key, importing a link - and every
+// teardown path used to ask isDemo(). Switch to the demo key mid-session and disconnect became
+// a no-op, cleanup() skipped tun.requestStopSync(), and quit() skipped restoring the system
+// proxy: a real TUN and a real proxy left pointing at a dead tunnel, with the UI insisting
+// nothing was connected.
+//
+// Teardown asks this instead, because it records what was actually started.
+let demoSession = false;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
@@ -496,6 +509,17 @@ function startSocks(workerUrl, uuid, port) {
 async function connect() {
   if (!isWsUrl(state.workerUrl)) return setMsg(A.red + "Set a server address first (wss://…). Press e." + A.reset);
   if (!isUuid(state.uuid)) return setMsg(A.red + "Set a valid access key first. Press e or g." + A.reset);
+  // Connecting while already connected must not abandon the running tunnel.
+  //
+  // "Connect to fastest" and the post-setup auto-connect both call straight in here, and
+  // startSocks() below simply overwrote `socks`. The previous listener stayed open and
+  // unreferenced, so the retry hit EADDRINUSE, fell back to port 0, and bound somewhere new -
+  // while the system proxy still pointed at 1080, where the abandoned listener was relaying
+  // through the OLD server. Closing first also means the rebind gets 1080 back, so the proxy
+  // setting stays correct.
+  if (socks || state.connected) await disconnect();
+
+  demoSession = isDemo();
   if (isDemo()) {  // recording mode: play the real connect animation, touch no network
     state.busy = true; state.busyText = "connecting…"; draw();
     await sleep(600);
@@ -530,11 +554,12 @@ async function connect() {
 }
 
 async function disconnect() {
-  if (isDemo()) {  // demo mode was display-only; just reset the flags, nothing real to tear down
+  if (demoSession) {  // this session was display-only; just reset the flags, nothing real to tear down
     state.tunActive = false; state.systemProxy = false;
     state.connected = false; state.reconnecting = false; state.socksPort = null; state.exitIP = null;
     stopHealthMonitor();
     stopStats();
+    demoSession = false;
     return setMsg("Disconnected.");
   }
   // Turn off device-wide capture FIRST - leaving the system proxy or the TUN pointed at a dead
@@ -554,6 +579,7 @@ async function disconnect() {
   stopStats();
   if (socks) { try { socks.close(); } catch {} }
   socks = null; state.connected = false; state.reconnecting = false; state.socksPort = null; state.exitIP = null;
+  demoSession = false;
   setMsg("Disconnected.");
 }
 
@@ -591,7 +617,7 @@ async function healthTick() {
     if (state.reconnecting) { state.reconnecting = false; setMsg(A.green + `Tunnel recovered, exits via ${ip}.` + A.reset); }
     // Full tunnel: getExitIP above rides the SOCKS loopback, which bypasses the utun. So ALSO verify
     // the device path forwards - a wedged tun2socks passes the SOCKS check but black-holes everything.
-    if (state.tunActive && !isDemo()) {
+    if (state.tunActive && !demoSession) {
       const flowing = await deviceProbe();
       if (!flowing) {
         if (++tunFails >= 2) {  // two strikes while the SOCKS path is healthy = the helper is wedged
@@ -1324,7 +1350,20 @@ function cleanup() {
   try { dnsFwd && dnsFwd.close(); } catch {}
   // Signal the root TUN session to tear down (restores routing). Synchronous file touch, safe
   // here; the session also self-heals via its owner-PID watchdog if this never runs.
-  if (state.tunActive && !isDemo()) tun.requestStopSync();
+  if (state.tunActive && !demoSession) tun.requestStopSync();
+  // The system proxy is machine-wide and outlives this process, so it has to come off here too,
+  // not only in quit().
+  //
+  // quit() is the graceful path and handles it already, but it is not the only way out. A
+  // closed terminal, a crash, or anything that reaches 'exit' without going through quit() left
+  // the whole machine pointed at a SOCKS port with nothing behind it: browsing stops working
+  // everywhere, nothing on screen explains it, and the TUI that could have told you is gone.
+  // The TUN has a watchdog for exactly this reason; the proxy had nothing.
+  //
+  // Synchronous because the event loop is over by the time this runs - an async call here would
+  // be registered and never executed. Un-elevated only, so a dying process can never block on a
+  // password prompt.
+  if (state.systemProxy && state.netService && !demoSession) setSocksOffSync(state.netService);
   if (socks) { try { socks.close(); } catch {} }
   try { process.stdin.setRawMode(false); } catch {}
   // Synchronous write so the terminal is restored even though process.exit() follows -
@@ -1336,12 +1375,12 @@ async function quit() {
   if (quitting) return;
   quitting = true;
   // Best-effort: don't leave the user's traffic pointed at a dead proxy/TUN on exit.
-  if (state.tunActive && !isDemo()) {
+  if (state.tunActive && !demoSession) {
     state.busy = true; state.busyText = "restoring network…"; draw();
     try { await tun.stopTun(); } catch {}
     state.tunActive = false;
   }
-  if (state.systemProxy && state.netService && !isDemo()) {
+  if (state.systemProxy && state.netService && !demoSession) {
     state.busy = true; state.busyText = "restoring network…"; draw();
     try { await setSocks(state.netService, false); } catch {}
   }
@@ -1372,6 +1411,12 @@ function main() {
   process.stdin.on("data", keyHandler);
   process.on("exit", cleanup);
   process.on("SIGTERM", quit);
+  // SIGHUP is the terminal window being closed, which is a completely ordinary way to leave a
+  // TUI and previously skipped the graceful path entirely. SIGINT matters because raw mode
+  // means the terminal no longer turns Ctrl-C into one for us, but the signal can still arrive
+  // from a `kill` or a process-group interrupt.
+  process.on("SIGHUP", quit);
+  process.on("SIGINT", quit);
   process.stdout.on("resize", draw);
   // Animate the spinner ONLY while busy. When idle we don't repaint at all, so the
   // static frame just sits in the buffer and scrolling never fights a redraw.

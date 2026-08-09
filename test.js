@@ -18,6 +18,7 @@ import { FrameParser, FrameError, encodeFrame, OPCODES } from "./common/ws-frame
 import { renderFrame, hitTest, fmtBytes, latLevel, pickFastest, mergeBy, buildBackup, planImport, semverGt } from "./tui.js";
 import { parseEndpoint } from "./common/doctor.js";
 import { parseKeys, startWorker } from "./worker-shim.js";
+import { setSocksOffSync } from "./common/sysproxy.js";
 import net from "node:net";
 import { once } from "node:events";
 import { siteNames } from "./provision/vps.js";
@@ -614,4 +615,18 @@ test("server: with no wsPath configured every path still upgrades", async () => 
   } finally {
     server.close();
   }
+});
+
+test("sysproxy: the synchronous off-switch never throws, because it runs in an exit handler", () => {
+  // Called from process.on("exit"), where the event loop is already finished. A throw there
+  // would replace an orderly shutdown with a stack trace AND skip the terminal restore that
+  // runs after it, leaving the user in the alt screen buffer with no cursor.
+  //
+  // It must also stay un-elevated: escalating opens a GUI password prompt, and a dying process
+  // blocking on one is worse than the leftover proxy it was trying to clear.
+  assert.doesNotThrow(() => setSocksOffSync(null));
+  assert.equal(setSocksOffSync(null), false, "no service means nothing to turn off");
+  assert.doesNotThrow(() => setSocksOffSync(""), "empty service is handled, not thrown on");
+  assert.doesNotThrow(() => setSocksOffSync("No Such Network Service ZZZ"),
+    "networksetup failing for an unknown service is reported, not thrown");
 });

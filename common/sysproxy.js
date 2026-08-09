@@ -4,7 +4,7 @@
 // Changing network settings needs admin rights, so writes try un-elevated first and fall
 // back to an osascript GUI password prompt. Read-only queries never prompt. macOS only.
 
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 
 const isMac = process.platform === "darwin";
 
@@ -39,6 +39,28 @@ export async function socksEnabled(service) {
   if (!isMac || !service) return false;
   const out = await run("networksetup", ["-getsocksfirewallproxy", service]);
   return !!(out && /^Enabled:\s*Yes/im.test(out));
+}
+
+// Turn the proxy off synchronously, for a process 'exit' handler.
+//
+// Nothing async can run there - the event loop is finished, so setSocks() below would be
+// registered and never executed, which is exactly how a killed TUI left the whole machine
+// pointed at a SOCKS port that no longer had anything listening on it. The user's browsing
+// stops working and nothing on screen explains why.
+//
+// Un-elevated only, and deliberately so: the osascript escalation opens a GUI password prompt,
+// and blocking a dying process on one would hang the terminal instead of restoring it. If the
+// un-elevated call is refused there is nothing more to try from here, and the TUI's own startup
+// check reports a proxy left on so the next run can offer to fix it.
+export function setSocksOffSync(service) {
+  if (!isMac || !service) return false;
+  try {
+    execFileSync("networksetup", ["-setsocksfirewallproxystate", service, "off"],
+                 { timeout: 4000, stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // Turn the system SOCKS proxy on (pointed at host:port) or off. Returns true on success.
