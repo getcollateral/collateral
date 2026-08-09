@@ -303,25 +303,39 @@ h1,h2,h3,.faq-q,.btn-amber,.btn-out,.fl,.nl,.lc{text-transform:lowercase}
   <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:clamp(28px,3.8vw,44px);line-height:1.08;letter-spacing:-.025em;margin:16px 0 0;color:#fff;max-width:24ch">The same tunnel, without the terminal.</h2>
   <p style="margin:18px 0 0;font-size:clamp(15px,1.5vw,17px);line-height:1.65;color:#B4B4B8;max-width:66ch">Collateral for Mac is a native app: a menu bar toggle, a real window, and a system network extension that carries every app on the machine. It builds the server for you over SSH, hands out and revokes keys for friends, and tells you which part is broken when something is. The terminal app stays free and open source; this is for people who would rather click.</p>
 
-  <div style="margin-top:36px;display:flex;flex-direction:column;gap:18px">
-    <figure style="margin:0">
-      <div style="border:1px solid rgba(230,230,230,.1);border-radius:12px;overflow:hidden;background:#0D0F13;box-shadow:0 30px 80px -40px rgba(0,0,0,.9)">
-        <img src="img/mac-status.jpg" alt="The Status pane: tunnel connected, latency, and this session's traffic broken down by app." width="1400" height="903" loading="lazy" decoding="async" style="display:block;width:100%;height:auto">
-      </div>
-      <figcaption style="margin-top:11px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#6C6E76;line-height:1.5">Status &#183; what is connected, how fast, and which apps are actually using it.</figcaption>
-    </figure>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px">
+  <!-- The window in these shots is nearly square (1400x1310), not the 3:2 the first set had,
+       so a full-bleed hero image would be over a thousand pixels tall on a desktop and push
+       everything else off the screen. Capped width on the lead shot, an even grid for the
+       rest. -->
+  <!-- Two columns, not three. These shots are nearly square and dense with small type, and at
+       a third of the content width the diagnostics lines stop being readable, which defeats
+       the point of showing a pane whose whole argument is that it tells you what is wrong.
+       Four equal tiles also avoids the orphan a hero-plus-three layout leaves on the last row. -->
+  <div style="margin-top:36px;display:flex;flex-direction:column;gap:22px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:24px 18px">
+      <figure style="margin:0">
+        <div style="border:1px solid rgba(230,230,230,.1);border-radius:12px;overflow:hidden;background:#0D0F13;box-shadow:0 30px 80px -40px rgba(0,0,0,.9)">
+          <img src="img/mac-status.jpg" alt="The Status pane: tunnel connected, latency, and this session's traffic broken down by app." width="1400" height="1310" loading="lazy" decoding="async" style="display:block;width:100%;height:auto">
+        </div>
+        <figcaption style="margin-top:11px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#6C6E76;line-height:1.5">Status &#183; what is connected, how fast, and which apps are actually using it.</figcaption>
+      </figure>
       <figure style="margin:0">
         <div style="border:1px solid rgba(230,230,230,.1);border-radius:12px;overflow:hidden;background:#0D0F13">
-          <img src="img/mac-setup.jpg" alt="The setup sheet working through connecting over SSH, uploading the server, installing, and issuing an HTTPS certificate." width="1400" height="903" loading="lazy" decoding="async" style="display:block;width:100%;height:auto">
+          <img src="img/mac-setup.jpg" alt="The setup sheet working through connecting over SSH, uploading the server, installing, and issuing an HTTPS certificate." width="1400" height="1310" loading="lazy" decoding="async" style="display:block;width:100%;height:auto">
         </div>
         <figcaption style="margin-top:11px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#6C6E76;line-height:1.5">Setup &#183; point it at a bare VM and watch it build the thing.</figcaption>
       </figure>
       <figure style="margin:0">
         <div style="border:1px solid rgba(230,230,230,.1);border-radius:12px;overflow:hidden;background:#0D0F13">
-          <img src="img/mac-diagnostics.jpg" alt="Diagnostics listing configuration, internet, server address, port 443, certificate, and tunnel checks, all passing." width="1400" height="903" loading="lazy" decoding="async" style="display:block;width:100%;height:auto">
+          <img src="img/mac-diagnostics.jpg" alt="Diagnostics listing configuration, internet, server address, port 443, certificate, and tunnel checks, all passing." width="1400" height="1310" loading="lazy" decoding="async" style="display:block;width:100%;height:auto">
         </div>
         <figcaption style="margin-top:11px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#6C6E76;line-height:1.5">Diagnostics &#183; every link in the chain checked separately, so you know which one failed.</figcaption>
+      </figure>
+      <figure style="margin:0">
+        <div style="border:1px solid rgba(230,230,230,.1);border-radius:12px;overflow:hidden;background:#0D0F13">
+          <img src="img/mac-friends.jpg" alt="The Friends pane listing people with access, each with buttons to show their link or revoke it." width="1400" height="1310" loading="lazy" decoding="async" style="display:block;width:100%;height:auto">
+        </div>
+        <figcaption style="margin-top:11px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#6C6E76;line-height:1.5">Friends &#183; hand someone their own key, take it back whenever you like.</figcaption>
       </figure>
     </div>
   </div>
@@ -347,7 +361,7 @@ h1,h2,h3,.faq-q,.btn-amber,.btn-out,.fl,.nl,.lc{text-transform:lowercase}
         <span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:clamp(32px,4vw,42px);letter-spacing:-.02em;color:#fff;line-height:1">$15</span>
         <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;letter-spacing:.06em;color:#8A8A8A">USD &#183; one time &#183; not a subscription</span>
       </div>
-      <p style="margin:14px 0 0;font-size:14.5px;line-height:1.6;color:#B4B4B8;max-width:46ch">Free for 7 days, no card and no account. One purchase covers every Mac you own and every future version.</p>
+      <p style="margin:14px 0 0;font-size:14.5px;line-height:1.6;color:#B4B4B8;max-width:46ch">Free for 7 days, no card and no account. One purchase covers unlimited Macs and every future version.</p>
       <div style="margin-top:16px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#6C6E76;line-height:1.75">
         <div>macOS 15 or later &#183; Apple silicon + Intel</div>
         <div>signed and notarized by Apple</div>
@@ -449,7 +463,7 @@ h1,h2,h3,.faq-q,.btn-amber,.btn-out,.fl,.nl,.lc{text-transform:lowercase}
         <span class="faq-marker" style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#FFAF00;font-weight:700;flex:0 0 auto;width:26px">[+]</span>
         <span class="faq-q" style="font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:clamp(16px,1.7vw,19px);flex:1;line-height:1.3">What do I get for the $15?</span>
       </button>
-      <div class="faq-a" style="display:none;padding:0 4px 24px 41px;font-size:15px;line-height:1.65;color:#B4B4B8;max-width:70ch">The native Mac app: menu bar toggle, kill switch, live traffic by app, server setup and key management from a window instead of a prompt, and diagnostics that isolate which hop is broken. One purchase covers every Mac you own and every future version. The tunnel itself is the same one the free terminal app builds, so you are paying for the app, not for access.</div>
+      <div class="faq-a" style="display:none;padding:0 4px 24px 41px;font-size:15px;line-height:1.65;color:#B4B4B8;max-width:70ch">The native Mac app: menu bar toggle, kill switch, live traffic by app, server setup and key management from a window instead of a prompt, and diagnostics that isolate which hop is broken. One purchase covers unlimited Macs and every future version, with no per-device activation to run out of. The tunnel itself is the same one the free terminal app builds, so you are paying for the app, not for access.</div>
     </div>
 
     <div class="faq-item" style="border-top:1px solid rgba(230,230,230,.1)">
