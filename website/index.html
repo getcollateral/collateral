@@ -357,11 +357,21 @@ h1,h2,h3,.faq-q,.btn-amber,.btn-out,.fl,.nl,.lc{text-transform:lowercase}
 
   <div style="margin-top:26px;background:#0D0F13;border:1px solid rgba(0,175,175,.22);border-radius:12px;padding:clamp(24px,3vw,36px);display:flex;gap:32px;flex-wrap:wrap;align-items:center;justify-content:space-between">
     <div style="flex:1 1 320px;min-width:280px">
+      <!-- The launch discount is a FLAT $5 off on Gumroad (offer code FIRST50, capped at 50
+           uses), so the price it produces is exactly $10 rather than an awkward $10.05. Both
+           numbers are stated because a struck-through price with no original is meaningless.
+           When the 50 run out this block has to come out, or the page starts lying: the count
+           lives on Gumroad and a static page cannot know it. -->
       <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
-        <span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:clamp(32px,4vw,42px);letter-spacing:-.02em;color:#fff;line-height:1">$15</span>
+        <span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:clamp(32px,4vw,42px);letter-spacing:-.02em;color:#fff;line-height:1">$10</span>
+        <span style="font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:clamp(18px,2vw,22px);color:#6C6E76;text-decoration:line-through;line-height:1">$15</span>
         <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;letter-spacing:.06em;color:#8A8A8A">USD &#183; one time &#183; not a subscription</span>
       </div>
-      <p style="margin:14px 0 0;font-size:14.5px;line-height:1.6;color:#B4B4B8;max-width:46ch">Free for 7 days, no card and no account. One purchase covers unlimited Macs and every future version.</p>
+      <div style="margin-top:12px;display:inline-flex;align-items:center;gap:9px;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.04em;color:#0A0A0C;background:#FFAF00;border-radius:6px;padding:6px 11px">
+        <span style="width:7px;height:7px;border-radius:50%;background:#0A0A0C;display:inline-block"></span>
+        a third off for the first 50
+      </div>
+      <p style="margin:14px 0 0;font-size:14.5px;line-height:1.6;color:#B4B4B8;max-width:46ch">Free for 7 days, no card and no account. One purchase covers unlimited Macs and every future version. The discount is applied for you at checkout, no code to remember.</p>
       <div style="margin-top:16px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#6C6E76;line-height:1.75">
         <div>macOS 15 or later &#183; Apple silicon + Intel</div>
         <div>signed and notarized by Apple</div>
@@ -373,7 +383,7 @@ h1,h2,h3,.faq-q,.btn-amber,.btn-out,.fl,.nl,.lc{text-transform:lowercase}
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v13"/><path d="m7 12 5 5 5-5"/><path d="M4 21h16"/></svg>
         Download the trial
       </a>
-      <a href="https://tkls.gumroad.com/l/collateral" target="_blank" rel="noopener" class="btn-out" style="display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:'JetBrains Mono',monospace;font-weight:500;font-size:14px;color:#E6E6E6;border:1px solid rgba(230,230,230,.22);border-radius:8px;padding:13px 20px">Buy a licence <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px"><path d="M7 17 17 7"/><path d="M9 7h8v8"/></svg></a>
+      <a href="https://tkls.gumroad.com/l/collateral/FIRST50" target="_blank" rel="noopener" class="btn-out" style="display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:'JetBrains Mono',monospace;font-weight:500;font-size:14px;color:#E6E6E6;border:1px solid rgba(230,230,230,.22);border-radius:8px;padding:13px 20px">Buy a licence <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px"><path d="M7 17 17 7"/><path d="M9 7h8v8"/></svg></a>
       <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#6C6E76;text-align:center;line-height:1.5">drag it to Applications when it opens</span>
     </div>
   </div>
@@ -536,7 +546,7 @@ h1,h2,h3,.faq-q,.btn-amber,.btn-out,.fl,.nl,.lc{text-transform:lowercase}
         <a href="#how" class="fl" style="color:#B4B4B8">How it works</a>
         <a href="#stealth" class="fl" style="color:#B4B4B8">Stealth transport</a>
         <a href="#features" class="fl" style="color:#B4B4B8">Features</a>
-        <a href="https://tkls.gumroad.com/l/collateral" target="_blank" rel="noopener" class="fl" style="color:#B4B4B8;display:inline-flex;align-items:center;gap:5px">Buy for Mac <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"/><path d="M9 7h8v8"/></svg></a>
+        <a href="https://tkls.gumroad.com/l/collateral/FIRST50" target="_blank" rel="noopener" class="fl" style="color:#B4B4B8;display:inline-flex;align-items:center;gap:5px">Buy for Mac <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"/><path d="M9 7h8v8"/></svg></a>
       </div>
     </div>
   </div>
