@@ -1,6 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Collateral">
+  <!-- The logo's own geometry, matching collateral-app-icon.svg beside it and the mark in the
+       website nav: brackets M24 11 H13 V53 H24 and M40 11 H51 V53 H40 at stroke-width 5, dot
+       r 6.5. This file had drifted to stroke 8, r 9 and a wider gap between the brackets, which
+       reads as a chunkier, dot-heavy relative rather than the mark. The same wrong geometry had
+       also reached website/favicon.svg, so both copies of the favicon were redraws and every
+       other asset in this set was correct.
+
+       The only two departures from the app icon are the ones a 16px tile needs, and neither
+       changes the proportions between the brackets and the dot: scaled UP about the centre
+       rather than the app icon's 0.86 down, because a tab has no room for padding, and the
+       stroke taken to 6.5 so it does not render around 1.2px wide. -->
   <rect width="64" height="64" fill="#0E1114"></rect>
-  <path d="M22 8 H8 V56 H22" fill="none" stroke="#227E83" stroke-width="8"></path>
-  <path d="M42 8 H56 V56 H42" fill="none" stroke="#227E83" stroke-width="8"></path>
-  <circle cx="32" cy="32" r="9" fill="#E0912F"></circle>
+  <g transform="translate(32,32) scale(1.18) translate(-32,-32)">
+    <path d="M24 11 H13 V53 H24" fill="none" stroke="#227E83" stroke-width="6.5"></path>
+    <path d="M40 11 H51 V53 H40" fill="none" stroke="#227E83" stroke-width="6.5"></path>
+    <circle cx="32" cy="32" r="6.5" fill="#E0912F"></circle>
+  </g>
 </svg>
