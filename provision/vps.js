@@ -52,7 +52,7 @@ export function bundleServer() {
     bodies.push(src.trim());
   }
   // Dedicated server file → start unconditionally, bound to localhost (Caddy fronts it).
-  const start = `\nstartWorker({ port: Number(process.env.WORKER_PORT || 8787), host: "127.0.0.1", keysFile: process.env.KEYS_FILE, uuid: process.env.USER_UUID });\n`;
+  const start = `\nstartWorker({ port: Number(process.env.WORKER_PORT || 8787), host: "127.0.0.1", keysFile: process.env.KEYS_FILE, uuid: process.env.USER_UUID, wsPath: process.env.WS_PATH });\n`;
   return [...nodeImports].join("\n") + "\n\n" + bodies.join("\n\n") + "\n" + start;
 }
 
@@ -73,7 +73,7 @@ function ssh(host, user, keyPath, remoteCmd, input, timeout = 300000, onData) {
 }
 
 // The remote install script (Ubuntu-focused; best-effort on Oracle Linux). Idempotent.
-export function setupScript({ uuid, domain }) {
+export function setupScript({ uuid, domain, wsPath }) {
   return `#!/usr/bin/env bash
 set -eo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -123,7 +123,7 @@ sudo mkdir -p /opt/collateral
 # friend keys added since - a redeploy must never wipe them.
 sudo touch /opt/collateral/keys && sudo chmod 600 /opt/collateral/keys
 sudo grep -qxF '${uuid}' /opt/collateral/keys || echo '${uuid}' | sudo tee -a /opt/collateral/keys >/dev/null
-printf 'KEYS_FILE=/opt/collateral/keys\\nUSER_UUID=%s\\nWORKER_PORT=8787\\n' '${uuid}' | sudo tee /opt/collateral/env >/dev/null
+printf 'KEYS_FILE=/opt/collateral/keys\\nUSER_UUID=%s\\nWORKER_PORT=8787\\nWS_PATH=%s\\n' '${uuid}' '${wsPath || ""}' | sudo tee /opt/collateral/env >/dev/null
 sudo chmod 600 /opt/collateral/env
 sudo tee /etc/systemd/system/collateral.service >/dev/null <<UNIT
 [Unit]
@@ -304,7 +304,7 @@ export async function provisionVps({ host, user = "ubuntu", keyPath, uuid: keyAr
   log("\n[install] running setup on the VM:\n");
   let out;
   try {
-    out = await ssh(host, user, keyPath, "bash -s", setupScript({ uuid, domain: siteList }), 600000, log);
+    out = await ssh(host, user, keyPath, "bash -s", setupScript({ uuid, domain: siteList, wsPath }), 600000, log);
   } catch (e) {
     const blob = (e.stdout || "") + (e.stderr || "");
     if (/COLLATERAL_NEED_NOPASSWD_SUDO/.test(blob)) throw new Error(`${user}@${host} needs passwordless sudo (ubuntu/opc users have it).`);

@@ -31,7 +31,7 @@ export function parseKeys(lines) {
 // Accepts a single `uuid`, an array `uuids`, and/or a `keysFile` (one UUID per line, `#` comments).
 // The keys file is re-read on change (fs.watch), so adding or revoking a friend's key on the VM
 // takes effect immediately, with no restart.
-export function startWorker({ port = 8787, host = "127.0.0.1", uuid, uuids, keysFile, quiet = false } = {}) {
+export function startWorker({ port = 8787, host = "127.0.0.1", uuid, uuids, keysFile, wsPath, quiet = false } = {}) {
   let allowed = new Set();
   const loadKeys = () => {
     const lines = [];
@@ -58,6 +58,29 @@ export function startWorker({ port = 8787, host = "127.0.0.1", uuid, uuids, keys
   server.on("upgrade", (req, socket, head) => {
     if ((req.headers["upgrade"] || "").toLowerCase() !== "websocket" || !req.headers["sec-websocket-key"]) {
       socket.destroy();
+      return;
+    }
+    // The endpoint path is part of the secret, so it has to be checked before we admit to
+    // speaking WebSocket at all.
+    //
+    // provision/vps.js mints a random path and puts it in the URL every client is given, but
+    // the server was never told what it was, so every path answered 101. That made the random
+    // path decorative and defeated the decoy in a single probe: a host that serves static
+    // content does not complete a WebSocket handshake on an arbitrary URL, so one upgrade
+    // request to /anything distinguished this box from the site it claims to be.
+    //
+    // A mismatch gets exactly what a plain GET for that path gets, because any other answer is
+    // itself a signal.
+    //
+    // Unset means no check, which is what keeps servers provisioned before this shipped
+    // working; they pick the check up when setup is next run.
+    if (wsPath && (req.url || "").split("?")[0] !== wsPath) {
+      const body = decoyPage();
+      const head = Object.entries(DECOY_HEADERS).map(([k, v]) => `${k}: ${v}\r\n`).join("");
+      try {
+        socket.write(`HTTP/1.1 200 OK\r\n${head}content-length: ${Buffer.byteLength(body)}\r\nconnection: close\r\n\r\n${body}`);
+      } catch {}
+      socket.end();
       return;
     }
     const accept = computeAcceptKey(req.headers["sec-websocket-key"]);

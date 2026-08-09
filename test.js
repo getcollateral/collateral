@@ -17,7 +17,9 @@ import { vlessUriFromConfig, parseVlessUri } from "./common/config.js";
 import { FrameParser, FrameError, encodeFrame, OPCODES } from "./common/ws-frame.js";
 import { renderFrame, hitTest, fmtBytes, latLevel, pickFastest, mergeBy, buildBackup, planImport, semverGt } from "./tui.js";
 import { parseEndpoint } from "./common/doctor.js";
-import { parseKeys } from "./worker-shim.js";
+import { parseKeys, startWorker } from "./worker-shim.js";
+import net from "node:net";
+import { once } from "node:events";
 import { siteNames } from "./provision/vps.js";
 import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun, parseLinuxDefaultRoute, parseResolvConf, parseResolvectl, firstFreeTun, pfKillSwitchRules, iptablesKillSwitchSetup, iptablesKillSwitchTeardown, iptablesDnsRedirect, iptablesDnsRedirectTeardown } from "./common/tun.js";
 import { aptHint } from "./provision/vps.js";
@@ -547,4 +549,69 @@ test("siteNames reads the domains a Caddyfile serves", () => {
     siteNames(global + "example.com {\n  handle_path /x/* {\n    respond 200\n  }\n}\n"),
     ["example.com"],
   );
+});
+
+// Send a raw WebSocket upgrade and return the response head, without completing a handshake.
+function probeUpgrade(port, path) {
+  return new Promise((resolve) => {
+    let buf = "";
+    const s = net.connect(port, "127.0.0.1", () => {
+      s.write(
+        `GET ${path} HTTP/1.1\r\nHost: probe.invalid\r\nUpgrade: websocket\r\n` +
+        `Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n` +
+        `Sec-WebSocket-Version: 13\r\n\r\n`
+      );
+    });
+    const done = () => { try { s.destroy(); } catch {} resolve(buf); };
+    s.on("data", (d) => { buf += d; if (buf.includes("\r\n\r\n")) done(); });
+    s.on("close", done);
+    s.on("error", done);
+    setTimeout(done, 2000);
+  });
+}
+
+test("server: a WebSocket upgrade on the wrong path gets the decoy, never a 101", async () => {
+  // provision mints a random path and puts it in every client's URL, but the server used to
+  // answer 101 on any path at all, so the path protected nothing and one upgrade request to
+  // /anything told a probe this was not the static host it claims to be.
+  const server = startWorker({
+    port: 0, host: "127.0.0.1", quiet: true,
+    uuid: "11111111-2222-3333-4444-555555555555",
+    wsPath: "/deadbeefcafe",
+  });
+  await once(server, "listening");
+  const port = server.address().port;
+  try {
+    const right = await probeUpgrade(port, "/deadbeefcafe");
+    assert.match(right, /^HTTP\/1\.1 101 /, "the provisioned path must still upgrade");
+
+    for (const wrong of ["/", "/anything", "/deadbeefcaf", "/deadbeefcafe2", "/DEADBEEFCAFE"]) {
+      const res = await probeUpgrade(port, wrong);
+      assert.doesNotMatch(res, /101 Switching Protocols/, `${wrong} must not upgrade`);
+      assert.match(res, /^HTTP\/1\.1 200 /, `${wrong} should look like the ordinary site`);
+      assert.match(res, /Service status/, `${wrong} should be served the decoy body`);
+    }
+
+    // The query string is not part of the path.
+    const q = await probeUpgrade(port, "/deadbeefcafe?x=1");
+    assert.match(q, /^HTTP\/1\.1 101 /, "a query string must not break the match");
+  } finally {
+    server.close();
+  }
+});
+
+test("server: with no wsPath configured every path still upgrades", async () => {
+  // Servers provisioned before the check existed have no WS_PATH in their env file; they must
+  // keep working until setup is next run, so an unset path means no check.
+  const server = startWorker({
+    port: 0, host: "127.0.0.1", quiet: true,
+    uuid: "11111111-2222-3333-4444-555555555555",
+  });
+  await once(server, "listening");
+  try {
+    const res = await probeUpgrade(server.address().port, "/whatever");
+    assert.match(res, /^HTTP\/1\.1 101 /);
+  } finally {
+    server.close();
+  }
 });
