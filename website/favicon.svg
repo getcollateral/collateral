@@ -1,5 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Collateral">
-  <path d="M22 8 H8 V56 H22" fill="none" stroke="#00AFAF" stroke-width="8"></path>
-  <path d="M42 8 H56 V56 H42" fill="none" stroke="#00AFAF" stroke-width="8"></path>
-  <circle cx="32" cy="32" r="9" fill="#FFAF00"></circle>
+  <!-- The logo's own geometry, not a redraw of it.
+       The paths and the dot radius are exactly those in the nav mark and in the app icon
+       source (design/icon-2-brackets.svg): brackets M24 11 H13 V53 H24 and M40 11 H51 V53 H40
+       at stroke-width 5, dot r 6.5. The previous favicon had drifted to stroke 8, r 9 and a
+       wider gap, which reads as a chunkier, dot-heavy relative of the logo rather than the
+       logo.
+       Two adjustments, both of which a 16px tile actually needs and neither of which changes
+       the mark's proportions to each other: scaled up about the centre so it fills the tile
+       instead of sitting in the padding a 64px canvas gives it, and the stroke taken from 5 to
+       6.5 so it survives being rendered ~1.6px wide in a browser tab. -->
+  <g transform="translate(32,32) scale(1.18) translate(-32,-32)">
+    <path d="M24 11 H13 V53 H24" fill="none" stroke="#00AFAF" stroke-width="6.5"/>
+    <path d="M40 11 H51 V53 H40" fill="none" stroke="#00AFAF" stroke-width="6.5"/>
+    <circle cx="32" cy="32" r="6.5" fill="#FFAF00"/>
+  </g>
 </svg>
