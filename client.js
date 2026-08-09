@@ -19,14 +19,34 @@ export function parseSocksUdp(buf) {
   if (buf.length < 5 || buf[2] !== 0x00) return null;
   const atyp = buf[3];
   let portOff, host;
-  if (atyp === 0x01) { host = `${buf[4]}.${buf[5]}.${buf[6]}.${buf[7]}`; portOff = 8; }
-  else if (atyp === 0x03) { const len = buf[4]; host = buf.subarray(5, 5 + len).toString("utf8"); portOff = 5 + len; }
-  else if (atyp === 0x04) { const p = []; for (let i = 0; i < 8; i++) p.push(buf.readUInt16BE(4 + i * 2).toString(16)); host = p.join(":"); portOff = 20; }
-  else return null;
+  // Each address family needs its own length check before its address is read. The shared
+  // `buf.length < 5` above is enough to reach ATYP and no further: an IPv6-typed datagram
+  // truncated after it sent readUInt16BE past the end of the buffer, and a RangeError raised
+  // inside the relay's 'message' handler is uncaught, so one short datagram from anywhere on
+  // the network ended the process. A datagram we cannot parse is simply not ours.
+  if (atyp === 0x01) {
+    if (buf.length < 10) return null;                  // 4 header + 4 address + 2 port
+    host = `${buf[4]}.${buf[5]}.${buf[6]}.${buf[7]}`; portOff = 8;
+  } else if (atyp === 0x03) {
+    const len = buf[4];
+    if (buf.length < 5 + len + 2) return null;         // 5 header + name + 2 port
+    host = buf.subarray(5, 5 + len).toString("utf8"); portOff = 5 + len;
+  } else if (atyp === 0x04) {
+    if (buf.length < 22) return null;                  // 4 header + 16 address + 2 port
+    const p = []; for (let i = 0; i < 8; i++) p.push(buf.readUInt16BE(4 + i * 2).toString(16));
+    host = p.join(":"); portOff = 20;
+  } else return null;
   if (buf.length < portOff + 2) return null;
   const port = buf.readUInt16BE(portOff);
   const dataOff = portOff + 2;
   return { atyp, host, port, hdrPrefix: Buffer.concat([Buffer.from([0, 0, 0]), buf.subarray(3, dataOff)]), data: buf.subarray(dataOff) };
+}
+
+// Refuse one SOCKS5 request without taking the process with it. `rep` is the SOCKS5 reply code
+// (0x01 general failure, 0x08 address type not supported).
+function failRequest(sock, rep) {
+  try { sock.write(Buffer.from([0x05, rep, 0x00, 0x01, 0, 0, 0, 0, 0, 0])); } catch {}
+  sock.destroy();
 }
 
 export function startClient({ socksPort = 1080, host = "127.0.0.1", workerUrl, uuid, quiet = false } = {}) {
@@ -61,10 +81,22 @@ export function startClient({ socksPort = 1080, host = "127.0.0.1", workerUrl, u
       }
       const atyp = req[3];
       let target, portOff;
-      if (atyp === 0x01) { target = `${req[4]}.${req[5]}.${req[6]}.${req[7]}`; portOff = 8; }
-      else if (atyp === 0x03) { const len = req[4]; target = req.subarray(5, 5 + len).toString("utf8"); portOff = 5 + len; }
-      else if (atyp === 0x04) { const p = []; for (let i = 0; i < 8; i++) p.push(req.readUInt16BE(4 + i * 2).toString(16)); target = p.join(":"); portOff = 20; }
-      else { sock.write(Buffer.from([0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0])); return sock.destroy(); }
+      // Same bounds discipline as parseSocksUdp, and for the same reason: this runs in a
+      // 'data' handler, so reading past the end throws RangeError with nobody to catch it and
+      // the process dies. A short request is not necessarily hostile either - the whole
+      // request is assumed to arrive in one segment, and TCP does not promise that.
+      if (atyp === 0x01) {
+        if (req.length < 10) return failRequest(sock, 0x01);
+        target = `${req[4]}.${req[5]}.${req[6]}.${req[7]}`; portOff = 8;
+      } else if (atyp === 0x03) {
+        const len = req[4];
+        if (req.length < 5 + len + 2) return failRequest(sock, 0x01);
+        target = req.subarray(5, 5 + len).toString("utf8"); portOff = 5 + len;
+      } else if (atyp === 0x04) {
+        if (req.length < 22) return failRequest(sock, 0x01);
+        const p = []; for (let i = 0; i < 8; i++) p.push(req.readUInt16BE(4 + i * 2).toString(16));
+        target = p.join(":"); portOff = 20;
+      } else { return failRequest(sock, 0x08); }        // 0x08 = address type not supported
       const port = req.readUInt16BE(portOff);
       const extra = req.subarray(portOff + 2);
       sock.write(Buffer.from([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])); // succeeded
@@ -75,6 +107,9 @@ export function startClient({ socksPort = 1080, host = "127.0.0.1", workerUrl, u
   // SOCKS4 / SOCKS4a: [4, cmd, port(2), ip(4), userid\0, (4a: host\0)]. The macOS system
   // proxy resolves DNS locally and sends SOCKS4 with an IP; SOCKS4a carries a hostname.
   function socks4(sock, req) {
+    // [VN, CD, port(2), ip(4)] is 8 bytes before the userid; short of that, readUInt16BE(2)
+    // and the ip reads below run off the end and throw out of a 'data' handler.
+    if (req.length < 8) { sock.write(Buffer.from([0x00, 0x5b, 0, 0, 0, 0, 0, 0])); return sock.destroy(); }
     if (req[1] !== 0x01) { sock.write(Buffer.from([0x00, 0x5b, 0, 0, 0, 0, 0, 0])); return sock.destroy(); } // CONNECT only
     const port = req.readUInt16BE(2);
     const ip = [req[4], req[5], req[6], req[7]];

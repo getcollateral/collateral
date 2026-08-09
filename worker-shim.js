@@ -150,8 +150,25 @@ function handleSession(socket, head, isAllowed, quiet) {
     }
   };
 
-  if (head && head.length) handle(parser.push(head));
-  socket.on("data", (d) => handle(parser.push(d)));
+  // A framing error closes this one connection and must never reach the event loop.
+  //
+  // parser.push throws for what a conforming peer cannot send: an over-large declared length,
+  // a fragmented control frame, a continuation with nothing to continue. Both call sites below
+  // run inside socket handlers, so an uncaught throw would end the process, take every other
+  // user's tunnel down with it, and hand a stranger a one-packet outage.
+  const feed = (chunk) => {
+    let messages;
+    try {
+      messages = parser.push(chunk);
+    } catch (e) {
+      if (!quiet) console.error("[worker-shim] framing error:", e.message);
+      return closeAll(e.code || 1002);
+    }
+    handle(messages);
+  };
+
+  if (head && head.length) feed(head);
+  socket.on("data", feed);
   socket.on("close", closeAll);
   socket.on("error", closeAll);
 }

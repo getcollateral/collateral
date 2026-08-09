@@ -14,7 +14,7 @@ import {
 import { parseSocksUdp } from "./client.js";
 import { qrMatrix } from "./common/qr.js";
 import { vlessUriFromConfig, parseVlessUri } from "./common/config.js";
-import { FrameParser, encodeFrame, OPCODES } from "./common/ws-frame.js";
+import { FrameParser, FrameError, encodeFrame, OPCODES } from "./common/ws-frame.js";
 import { renderFrame, hitTest, fmtBytes, latLevel, pickFastest, mergeBy, buildBackup, planImport, semverGt } from "./tui.js";
 import { parseEndpoint } from "./common/doctor.js";
 import { parseKeys } from "./worker-shim.js";
@@ -26,6 +26,7 @@ import { normalizeDomain } from "./provision/vps.js";
 
 const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
 
+const lenBE = (n) => { const b = Buffer.alloc(2); b.writeUInt16BE(n); return b; };
 const UUID = "8f1b6a2e-0c3d-4e5f-8a9b-1c2d3e4f5a6b";
 
 test("uuid round-trips through bytes", () => {
@@ -95,6 +96,27 @@ test("SOCKS5 UDP request parses the destination and preserves the reply header p
   assert.equal(parseSocksUdp(Buffer.from([0, 0, 1, 1])), null);               // FRAG != 0 unsupported
 });
 
+test("SOCKS5 UDP: a datagram truncated after ATYP returns null instead of throwing", () => {
+  // The IPv6 case is the one that used to crash: only `length < 5` was checked, so ATYP 0x04
+  // then read sixteen address bytes that were not there, and RangeError out of the relay's
+  // 'message' handler is uncaught - one short datagram from anywhere took the process down.
+  for (const atyp of [0x01, 0x03, 0x04]) {
+    for (let n = 5; n < 22; n++) {
+      const buf = Buffer.alloc(n);
+      buf[3] = atyp;
+      if (atyp === 0x03) buf[4] = 200;   // claims a 200-byte name the datagram does not carry
+      assert.doesNotThrow(() => parseSocksUdp(buf), `atyp ${atyp}, length ${n}`);
+    }
+  }
+  // A well-formed IPv6 datagram still parses, so the bounds checks did not cost us the feature.
+  const port = Buffer.alloc(2); port.writeUInt16BE(443);
+  const v6 = Buffer.concat([Buffer.from([0, 0, 0, 4]), Buffer.alloc(15), Buffer.from([1]), port, Buffer.from("hi")]);
+  const p = parseSocksUdp(v6);
+  assert.equal(p.host, "0:0:0:0:0:0:0:1");
+  assert.equal(p.port, 443);
+  assert.equal(p.data.toString(), "hi");
+});
+
 test("parseVlessHeader rejects a truncated buffer", () => {
   assert.throws(() => parseVlessHeader(new Uint8Array(10)));
 });
@@ -109,6 +131,62 @@ test("WebSocket frame: masked client frame parses back to the original", () => {
   assert.equal(msgs.length, 1);
   assert.equal(msgs[0].opcode, OPCODES.BIN);
   assert.ok(msgs[0].payload.equals(payload));
+});
+
+test("WebSocket frame: a huge declared length is refused before any of it is buffered", () => {
+  // The DoS the cap exists for. A 64-bit length header is 10 bytes and costs the sender
+  // nothing; before the cap, the parser would wait for the payload and let `buf` grow to meet
+  // it. No key and no complete frame are needed, so any stranger could do this to a server.
+  const p = new FrameParser();
+  const head = Buffer.alloc(10);
+  head[0] = 0x80 | OPCODES.BIN;
+  head[1] = 127;
+  head.writeUInt32BE(0x00000020, 2); // 128 GiB, and far past 2**53 when combined below
+  head.writeUInt32BE(0x00000000, 6);
+  assert.throws(() => p.push(head), (e) => e instanceof FrameError && e.code === 1009);
+  // The point is not just the throw: nothing was retained on the way to it.
+  assert.ok(p.buf.length <= 14, `buffer grew to ${p.buf.length}`);
+});
+
+test("WebSocket frame: fragments are capped on the reassembled total, not per frame", () => {
+  // Every individual frame here is legal and well under the frame cap; only the running total
+  // is abusive, so a per-frame check alone would miss it.
+  const p = new FrameParser({ maxMessageBytes: 4096 });
+  const chunk = Buffer.alloc(1024, 0x41);
+  p.push(Buffer.concat([Buffer.from([OPCODES.BIN, 126]), lenBE(chunk.length), chunk])); // fin=0, opens
+  // Three more brings the running total to exactly 4096: at the cap, still allowed.
+  for (let i = 0; i < 3; i++) {
+    p.push(Buffer.concat([Buffer.from([OPCODES.CONT, 126]), lenBE(chunk.length), chunk]));
+  }
+  // The fragment that crosses it is refused.
+  assert.throws(
+    () => p.push(Buffer.concat([Buffer.from([OPCODES.CONT, 126]), lenBE(chunk.length), chunk])),
+    (e) => e instanceof FrameError && e.code === 1009
+  );
+});
+
+test("WebSocket frame: framing rules a conforming peer cannot break are rejected", () => {
+  const err = (e) => e instanceof FrameError && e.code === 1002;
+  // Continuation with nothing to continue: used to silently emit a BIN frame nobody sent.
+  assert.throws(() => new FrameParser().push(Buffer.from([0x80 | OPCODES.CONT, 0])), err);
+  // Control frames must not be fragmented, and must stay under 126 bytes (RFC 6455 5.5).
+  assert.throws(() => new FrameParser().push(Buffer.from([OPCODES.PING, 0])), err);
+  assert.throws(() => new FrameParser().push(Buffer.from([0x80 | OPCODES.PING, 126, 0x01, 0x00])), err);
+  // A reserved bit set means an extension nobody negotiated (RFC 6455 5.2).
+  assert.throws(() => new FrameParser().push(Buffer.from([0x80 | 0x40 | OPCODES.BIN, 0])), err);
+});
+
+test("WebSocket frame: a legal fragmented message still reassembles", () => {
+  // The regression guard for the checks above: none of them may cost us ordinary fragmentation.
+  const p = new FrameParser();
+  const out = [
+    ...p.push(Buffer.from([OPCODES.BIN, 3, 0x61, 0x62, 0x63])),
+    ...p.push(Buffer.from([OPCODES.CONT, 2, 0x64, 0x65])),
+    ...p.push(Buffer.from([0x80 | OPCODES.CONT, 1, 0x66])),
+  ];
+  assert.equal(out.length, 1);
+  assert.equal(out[0].opcode, OPCODES.BIN);
+  assert.equal(out[0].payload.toString(), "abcdef");
 });
 
 test("WebSocket frame: encodeFrame output parses back (server->client, unmasked)", () => {
