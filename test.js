@@ -27,7 +27,8 @@ import { once } from "node:events";
 import { siteNames } from "./provision/vps.js";
 import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun, parseLinuxDefaultRoute, parseResolvConf, parseResolvectl, firstFreeTun, pfKillSwitchRules, iptablesKillSwitchSetup, iptablesKillSwitchTeardown, iptablesDnsRedirect, iptablesDnsRedirectTeardown } from "./common/tun.js";
 import { aptHint } from "./provision/vps.js";
-import { socksUdpWrap, socksUdpUnwrap } from "./common/dns.js";
+import { socksUdpWrap, socksUdpUnwrap, startDnsForwarder } from "./common/dns.js";
+import dgram from "node:dgram";
 import { normalizeDomain } from "./provision/vps.js";
 
 const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
@@ -748,5 +749,129 @@ test("config: the file is written atomically and kept private", async () => {
   } finally {
     process.env.HOME = home;
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// A minimal SOCKS5 server that supports UDP ASSOCIATE and echoes each datagram back, standing in
+// for client.js plus the tunnel plus the upstream resolver. Waits until `holdFor` datagrams have
+// arrived before answering any, so several queries are genuinely in flight at once.
+function fakeSocksUdp(holdFor) {
+  const relay = dgram.createSocket("udp4");
+  const held = [];
+  relay.on("message", (buf, rinfo) => {
+    const payload = socksUdpUnwrap(buf);
+    held.push({ payload, rinfo });
+    if (held.length < holdFor) return;
+    for (const h of held) {
+      // Echo the query back verbatim, which is what a resolver's answer looks like for our
+      // purposes: same txid, same body.
+      relay.send(socksUdpWrap("1.1.1.1", 53, h.payload), h.rinfo.port, h.rinfo.address);
+    }
+    held.length = 0;
+  });
+  const ctrl = net.createServer((sock) => {
+    let step = 0;
+    sock.on("error", () => {});
+    sock.on("data", function onData(d) {
+      if (step === 0) { sock.write(Buffer.from([0x05, 0x00])); step = 1; return; }
+      if (step === 1) {
+        if (d[1] === 0x03) {            // UDP ASSOCIATE: point at the relay socket
+          const p = Buffer.alloc(2); p.writeUInt16BE(relay.address().port);
+          sock.write(Buffer.concat([Buffer.from([0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1]), p]));
+          step = 2;
+          return;
+        }
+        // CONNECT: succeed, then behave as the upstream resolver would over TCP, which for
+        // this test means echoing the length-prefixed message straight back.
+        sock.write(Buffer.from([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]));
+        sock.removeListener("data", onData);
+        sock.on("data", (b) => { try { sock.write(b); } catch {} });
+        step = 2;
+      }
+    });
+  });
+  return { relay, ctrl };
+}
+
+// 12-byte DNS header plus one marker byte, which is all the forwarder looks at.
+function query(txid, marker) {
+  const b = Buffer.alloc(13);
+  b.writeUInt16BE(txid, 0);
+  b.write(marker, 12);
+  return b;
+}
+
+test("DNS forwarder: two clients sharing a transaction id both get their own answer", async () => {
+  // The collision. `pending` used to be keyed on the CLIENT's txid, so the second query
+  // overwrote the first: the first answer went to the second client carrying the wrong
+  // question, and the first client got nothing until it timed out. The resolver picks txids at
+  // random, so this is a birthday problem and around fifty queries in flight makes it likely.
+  const { relay, ctrl } = fakeSocksUdp(2);
+  await new Promise((r) => relay.bind(0, "127.0.0.1", r));
+  await new Promise((r) => ctrl.listen(0, "127.0.0.1", r));
+
+  const fwd = startDnsForwarder({ port: 0, quiet: true, socksPort: ctrl.address().port });
+  await new Promise((r) => setTimeout(r, 250));   // let the association complete
+  const fwdPort = fwd.address().port;
+
+  const clientA = dgram.createSocket("udp4");
+  const clientB = dgram.createSocket("udp4");
+  const gotA = once(clientA, "message");
+  const gotB = once(clientB, "message");
+  try {
+    const TXID = 0x1234;   // deliberately identical
+    clientA.send(query(TXID, "A"), fwdPort, "127.0.0.1");
+    clientB.send(query(TXID, "B"), fwdPort, "127.0.0.1");
+
+    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error(
+      "a client never got its answer: this is the txid collision")), 5000));
+    const [[a], [b]] = await Promise.race([Promise.all([gotA, gotB]), timeout]);
+
+    // Each client gets ITS OWN answer back, under the txid it actually sent.
+    assert.equal(a.readUInt16BE(0), TXID, "client A's answer carries the txid it sent");
+    assert.equal(b.readUInt16BE(0), TXID, "client B's answer carries the txid it sent");
+    assert.equal(String.fromCharCode(a[12]), "A", "client A got A's answer, not B's");
+    assert.equal(String.fromCharCode(b[12]), "B", "client B got B's answer, not A's");
+  } finally {
+    clientA.close(); clientB.close(); fwd.close();
+    relay.close(); ctrl.close();
+  }
+});
+
+test("DNS forwarder: TCP queries are served, not refused", async () => {
+  // The Linux redirect sends both udp/53 and tcp/53 here, and nothing was listening on TCP, so
+  // every lookup that needed it got connection-refused. Resolvers fall back to TCP whenever an
+  // answer will not fit in a datagram (TC=1, big TXT, most DNSSEC), so those names failed
+  // outright while everything else worked, which is why it stayed hidden.
+  const { relay, ctrl } = fakeSocksUdp(1);
+  await new Promise((r) => relay.bind(0, "127.0.0.1", r));
+  await new Promise((r) => ctrl.listen(0, "127.0.0.1", r));
+
+  const fwd = startDnsForwarder({ port: 0, quiet: true, socksPort: ctrl.address().port });
+  await new Promise((r) => setTimeout(r, 250));
+  const fwdPort = fwd.address().port;
+
+  const sock = net.connect(fwdPort, "127.0.0.1");
+  try {
+    await Promise.race([
+      once(sock, "connect"),
+      new Promise((_, rej) => setTimeout(() => rej(new Error(
+        "TCP DNS connection refused: nothing is listening on tcp/" + fwdPort)), 3000)),
+    ]);
+
+    // DNS over TCP is the same message behind a two-byte big-endian length.
+    const body = query(0xabcd, "T");
+    const len = Buffer.alloc(2); len.writeUInt16BE(body.length);
+    sock.write(Buffer.concat([len, body]));
+
+    const [reply] = await Promise.race([
+      once(sock, "data"),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("no TCP answer came back")), 4000)),
+    ]);
+    assert.equal(reply.readUInt16BE(0), body.length, "length prefix is preserved");
+    assert.equal(reply.readUInt16BE(2), 0xabcd, "the answer carries the query's txid");
+    assert.equal(String.fromCharCode(reply[14]), "T", "and the query's body");
+  } finally {
+    sock.destroy(); fwd.close(); relay.close(); ctrl.close();
   }
 });

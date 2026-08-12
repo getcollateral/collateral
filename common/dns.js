@@ -10,6 +10,7 @@
 
 import dgram from "node:dgram";
 import net from "node:net";
+import crypto from "node:crypto";
 
 // Wrap a payload in a SOCKS5 UDP request header: [RSV(2)=0][FRAG(1)=0][ATYP][ADDR][PORT(2)][DATA].
 export function socksUdpWrap(host, port, data) {
@@ -37,7 +38,7 @@ export function socksUdpUnwrap(buf) {
 export function startDnsForwarder({ host = "127.0.0.1", port = 5353, upstream = "1.1.1.1", upstreamPort = 53, socksHost = "127.0.0.1", socksPort = 1080, quiet = false } = {}) {
   const server = dgram.createSocket("udp4"); // where the OS / dig sends its DNS queries
   const relay = dgram.createSocket("udp4");  // our datagrams to the SOCKS UDP relay
-  const pending = new Map();                 // dns txid -> { rinfo, timer }
+  const pending = new Map();                 // OUR txid -> { rinfo, clientTxid, timer }
   let relayAddr = null, ctrl = null, ready = false, closed = false;
   const buffered = [];
 
@@ -62,13 +63,39 @@ export function startDnsForwarder({ host = "127.0.0.1", port = 5353, upstream = 
     ctrl.on("close", () => { ready = false; relayAddr = null; ctrl = null; });
   }
 
+  // A transaction id we are not already waiting on. Random rather than sequential: a
+  // predictable id is one an off-path attacker can guess.
+  function allocTxid() {
+    for (let i = 0; i < 64; i++) {
+      const t = crypto.randomInt(0x10000);
+      if (!pending.has(t)) return t;
+    }
+    return null;
+  }
+
   function sendUp(msg, rinfo) {
     if (closed) return;
     if (!ready || !relayAddr) { buffered.push({ msg, rinfo }); if (!ctrl) associate(); return; }
-    const txid = msg.readUInt16BE(0);
-    const prev = pending.get(txid); if (prev) clearTimeout(prev.timer);
-    pending.set(txid, { rinfo, timer: setTimeout(() => pending.delete(txid), 5000) });
-    try { relay.send(socksUdpWrap(upstream, upstreamPort, msg), relayAddr.port, relayAddr.host); } catch {}
+    // Rewrite the transaction ID on the way out, and restore it on the way back.
+    //
+    // Keying `pending` on the CLIENT's txid meant two clients that happened to pick the same
+    // 16-bit value collided, and the map simply overwrote the first. Its reply was then sent to
+    // the second client, carrying an answer to a question it never asked but with a txid that
+    // matched, while the first query vanished until it timed out. This is not exotic: the
+    // resolver picks txids at random, so it is a birthday problem, and around fifty queries in
+    // flight is enough for a percent-level chance. mDNSResponder on a busy machine gets there.
+    //
+    // Choosing our own id fixes it by construction, because we can guarantee uniqueness where
+    // we cannot govern what a client picks. It also raises the bar for off-path injection: a
+    // forged reply now has to guess a value we chose at random rather than one it watched the
+    // client send.
+    const clientTxid = msg.readUInt16BE(0);
+    const ourTxid = allocTxid();
+    if (ourTxid === null) return;   // table full; the 5s timers will drain it
+    const out = Buffer.from(msg);   // copy: never mutate the caller's buffer
+    out.writeUInt16BE(ourTxid, 0);
+    pending.set(ourTxid, { rinfo, clientTxid, timer: setTimeout(() => pending.delete(ourTxid), 5000) });
+    try { relay.send(socksUdpWrap(upstream, upstreamPort, out), relayAddr.port, relayAddr.host); } catch {}
   }
 
   server.on("error", () => {});
@@ -77,15 +104,70 @@ export function startDnsForwarder({ host = "127.0.0.1", port = 5353, upstream = 
   relay.on("message", (buf) => {
     const dns = socksUdpUnwrap(buf);
     if (!dns || dns.length < 2) return;
-    const txid = dns.readUInt16BE(0);
-    const w = pending.get(txid);
+    const ourTxid = dns.readUInt16BE(0);
+    const w = pending.get(ourTxid);
     if (!w) return;
-    clearTimeout(w.timer); pending.delete(txid);
-    try { server.send(dns, w.rinfo.port, w.rinfo.address); } catch {}
+    clearTimeout(w.timer); pending.delete(ourTxid);
+    // Put the client's own id back, or its resolver discards a reply it cannot match.
+    const out = Buffer.from(dns);
+    out.writeUInt16BE(w.clientTxid, 0);
+    try { server.send(out, w.rinfo.port, w.rinfo.address); } catch {}
   });
 
+  // DNS over TCP, on the same port.
+  //
+  // The Linux session script redirects BOTH udp/53 and tcp/53 to this forwarder, and until now
+  // only UDP was ever listened on, so every TCP lookup got connection-refused. Resolvers fall
+  // back to TCP whenever an answer does not fit in a datagram - a truncated reply with TC=1,
+  // large TXT records, most DNSSEC - so those names failed outright rather than being slow. The
+  // UDP path hid it, which is why it only ever showed up on the handful of domains that need
+  // TCP at all.
+  //
+  // Not redirecting tcp/53 instead would be worse: with the kill switch off those queries would
+  // go straight out in plaintext, which is the leak this whole forwarder exists to close.
+  //
+  // TCP DNS is length-prefixed and a client may pipeline several queries down one connection,
+  // so there is nothing to demultiplex here: open one tunnelled connection per client
+  // connection and let the bytes flow both ways. No txid bookkeeping, because TCP already
+  // keeps the pairing.
+  const tcpServer = net.createServer((sock) => {
+    sock.on("error", () => {});
+    if (closed) { sock.destroy(); return; }
+    const up = net.connect(socksPort, socksHost);
+    let step = 0;
+    up.on("error", () => { try { sock.destroy(); } catch {} });
+    sock.on("close", () => { try { up.destroy(); } catch {} });
+    up.once("connect", () => up.write(Buffer.from([0x05, 0x01, 0x00])));   // v5, no auth
+    up.on("data", function handshake(d) {
+      if (step === 0) {
+        if (d[0] !== 0x05 || d[1] !== 0x00) { up.destroy(); sock.destroy(); return; }
+        // CONNECT to the upstream resolver, addressed the same way socksUdpWrap does.
+        const parts = upstream.split(".").map(Number);
+        const isV4 = parts.length === 4 && parts.every((n) => Number.isInteger(n) && n >= 0 && n <= 255);
+        const addr = isV4
+          ? Buffer.from([0x01, ...parts])
+          : Buffer.concat([Buffer.from([0x03, upstream.length]), Buffer.from(upstream)]);
+        const pb = Buffer.alloc(2); pb.writeUInt16BE(upstreamPort, 0);
+        up.write(Buffer.concat([Buffer.from([0x05, 0x01, 0x00]), addr, pb]));
+        step = 1;
+        return;
+      }
+      // CONNECT reply. Hand the socket over to a plain pipe from here on.
+      if (d[1] !== 0x00) { up.destroy(); sock.destroy(); return; }
+      up.removeListener("data", handshake);
+      up.pipe(sock);
+      sock.pipe(up);
+    });
+  });
+  tcpServer.on("error", () => {});
+
   relay.bind(0, "127.0.0.1");
-  server.bind(port, host, () => { if (!quiet) console.log(`[dns] on ${host}:${server.address().port} -> tunnel -> ${upstream}:${upstreamPort}`); });
+  server.bind(port, host, () => {
+    // Bind TCP to whatever port UDP actually got, so a `port: 0` caller (the tests) still ends
+    // up with both on one port, the way the redirect rules assume.
+    try { tcpServer.listen(server.address().port, host); } catch {}
+    if (!quiet) console.log(`[dns] on ${host}:${server.address().port} (udp+tcp) -> tunnel -> ${upstream}:${upstreamPort}`);
+  });
   associate();
 
   return {
@@ -97,6 +179,7 @@ export function startDnsForwarder({ host = "127.0.0.1", port = 5353, upstream = 
       try { ctrl && ctrl.destroy(); } catch {}
       try { relay.close(); } catch {}
       try { server.close(); } catch {}
+      try { tcpServer.close(); } catch {}
     },
   };
 }
