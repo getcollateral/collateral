@@ -446,8 +446,28 @@ test("kill switch (macOS pf): blocks all egress but loopback, tun, server, DNS",
   assert.match(rules, /pass out quick inet proto tcp to 203\.0\.113\.9/);        // server reachable
   assert.match(rules, /to \{ 1\.1\.1\.1 8\.8\.8\.8 \} port 53/);                 // DNS reachable
   assert.match(rules, /block drop out inet all/);                               // everything else blocked
-  // the block must come LAST so the quick passes win first
-  assert.ok(rules.trim().endsWith("block drop out inet all"));
+  // The leak this used to have. `inet` is IPv4 only, so without an inet6 rule every
+  // dual-stack site (which browsers reach over v6 first) left the machine directly on the
+  // real interface with the real address, while the UI reported a locked-down tunnel.
+  assert.match(rules, /block drop out inet6 all/);
+
+  // An IPv6 server or resolver stays reachable through its own family, so the blanket v6
+  // block cannot strand the tunnel it is protecting.
+  const v6 = pfKillSwitchRules("2001:db8::1", ["2606:4700:4700::1111", "1.1.1.1"], "utun9");
+  assert.match(v6, /pass out quick inet6 proto tcp to 2001:db8::1/);
+  assert.match(v6, /pass out quick inet6 proto \{ tcp udp \} to \{ 2606:4700:4700::1111 \} port 53/);
+  assert.match(v6, /pass out quick inet proto \{ tcp udp \} to \{ 1\.1\.1\.1 \} port 53/);
+  assert.match(v6, /block drop out inet all/);
+  assert.match(v6, /block drop out inet6 all/);
+  // The blocks must come after every pass, so the quick passes win first. Asserted as the
+  // ordering property rather than a literal suffix: there are two blocks now, and a suffix
+  // check would have to be rewritten again the next time the rule set grows, while quietly
+  // permitting a pass line to be appended after the blocks - which is the mistake that would
+  // actually matter.
+  const lines = rules.trim().split("\n");
+  assert.deepEqual(lines.slice(-2), ["block drop out inet all", "block drop out inet6 all"]);
+  assert.ok(lines.slice(0, -2).every((l) => l.startsWith("pass ")),
+            "every rule before the blocks must be a pass");
   // no DNS servers -> no DNS pass line at all
   assert.ok(!/port 53/.test(pfKillSwitchRules("203.0.113.9", [], "utun9")));
 });

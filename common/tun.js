@@ -136,13 +136,31 @@ export function parseResolvectl(text) {
 
 // macOS pf anchor body. `quick` = first-match-wins, so the passes short-circuit before the block.
 export function pfKillSwitchRules(serverIp, dnsIps = [], dev = "") {
+  // `inet` in pf means IPv4 and nothing else, so a rule set that ends at `block drop out inet
+  // all` leaves IPv6 entirely unpoliced. That is the one thing a kill switch must never do:
+  // every dual-stack site is reached over IPv6 first (browsers prefer it via Happy Eyeballs),
+  // so on an IPv4-only tunnel the traffic the user most wants hidden is exactly the traffic
+  // that walks out of the real interface carrying the real address, while the UI says locked
+  // down. The only v6 guard was a networksetup -setv6off on the primary service, which does
+  // nothing when that lookup returned "" and covers no other interface: not a second Wi-Fi,
+  // not USB Ethernet, not a tethered phone. The Linux path always got this right with a global
+  // disable_ipv6.
+  //
+  // Families are matched to the addresses rather than assumed, so an IPv6 server or resolver
+  // is still reachable through its own family while everything else in both is dropped.
+  const isV6 = (addr) => String(addr).includes(":");
+  const serverFamily = isV6(serverIp) ? "inet6" : "inet";
+  const dns4 = dnsIps.filter((d) => !isV6(d));
+  const dns6 = dnsIps.filter(isV6);
   return [
     "pass quick on lo0 all",
     dev ? `pass quick on ${dev} all` : null,
-    `pass out quick inet proto tcp to ${serverIp}`,
-    `pass out quick inet proto udp to ${serverIp}`,
-    dnsIps.length ? `pass out quick inet proto { tcp udp } to { ${dnsIps.join(" ")} } port 53` : null,
+    `pass out quick ${serverFamily} proto tcp to ${serverIp}`,
+    `pass out quick ${serverFamily} proto udp to ${serverIp}`,
+    dns4.length ? `pass out quick inet proto { tcp udp } to { ${dns4.join(" ")} } port 53` : null,
+    dns6.length ? `pass out quick inet6 proto { tcp udp } to { ${dns6.join(" ")} } port 53` : null,
     "block drop out inet all",
+    "block drop out inet6 all",
   ].filter(Boolean).join("\n") + "\n";
 }
 
