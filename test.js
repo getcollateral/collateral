@@ -20,6 +20,9 @@ import { parseEndpoint } from "./common/doctor.js";
 import { parseKeys, startWorker } from "./worker-shim.js";
 import { setSocksOffSync } from "./common/sysproxy.js";
 import net from "node:net";
+import fs from "node:fs";
+import os from "node:os";
+import pathmod from "node:path";
 import { once } from "node:events";
 import { siteNames } from "./provision/vps.js";
 import { platArch, assetUrl, isPrivateIp, parseDefaultRoute, parsePublicDns, firstFreeUtun, parseLinuxDefaultRoute, parseResolvConf, parseResolvectl, firstFreeTun, pfKillSwitchRules, iptablesKillSwitchSetup, iptablesKillSwitchTeardown, iptablesDnsRedirect, iptablesDnsRedirectTeardown } from "./common/tun.js";
@@ -687,5 +690,63 @@ test("server: a client that drops without a CLOSE frame is torn down, not left i
   } finally {
     try { s.destroy(); } catch {}
     server.close();
+  }
+});
+
+test("config: a file that will not parse is never overwritten with just the patch", async () => {
+  // The data-loss path. loadConfig answers "no file" and "corrupt file" the same way, which is
+  // right for a reader and catastrophic for a writer: merge a patch onto defaults, save it, and
+  // every machine, friend and credential is replaced by the two keys the caller passed.
+  //
+  // Reachable without anything going wrong, because the Mac app shares this exact file and the
+  // old writeFileSync truncated before writing.
+  const dir = fs.mkdtempSync(pathmod.join(os.tmpdir(), "collateral-cfg-"));
+  const home = process.env.HOME;
+  try {
+    process.env.HOME = dir;
+    const store = await import(`./common/store.js?case=corrupt`);
+    const p = store.CONFIG_PATH;
+    // Prove the redirect took before writing anything. os.homedir() reads $HOME on POSIX and
+    // the ?case= query forces a fresh module evaluation, but if either ever stops holding,
+    // this test would write corrupt JSON over the developer's real config. Assert, do not hope.
+    assert.ok(p.startsWith(dir), `refusing to run: CONFIG_PATH is ${p}, not inside ${dir}`);
+
+    // A real config, then a truncated one, exactly as a reader would observe mid-write.
+    fs.writeFileSync(p, JSON.stringify({ workerUrl: "wss://a/x", uuid: "u", machines: [1, 2, 3] }));
+    fs.writeFileSync(p, '{"workerUrl": "wss:/');
+
+    store.saveConfig({ uuid: "new" });
+    assert.equal(fs.readFileSync(p, "utf8"), '{"workerUrl": "wss:/',
+      "a config that will not parse must be left exactly as found");
+  } finally {
+    process.env.HOME = home;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("config: the file is written atomically and kept private", async () => {
+  const dir = fs.mkdtempSync(pathmod.join(os.tmpdir(), "collateral-cfg-"));
+  const home = process.env.HOME;
+  try {
+    process.env.HOME = dir;
+    const store = await import(`./common/store.js?case=perms`);
+    assert.ok(store.CONFIG_PATH.startsWith(dir),
+              `refusing to run: CONFIG_PATH is ${store.CONFIG_PATH}, not inside ${dir}`);
+    store.saveConfig({ workerUrl: "wss://a/x", uuid: "secret-access-key" });
+
+    // 0600: this file is the whole credential for the tunnel plus the ssh key path, and the
+    // default 0644 left it readable by every other account on the machine.
+    const mode = fs.statSync(store.CONFIG_PATH).mode & 0o777;
+    assert.equal(mode.toString(8), "600", `expected 0600, got 0${mode.toString(8)}`);
+
+    // No temp file left behind by the rename.
+    const strays = fs.readdirSync(dir).filter((f) => f.includes(".tmp"));
+    assert.deepEqual(strays, [], "temp file should have been renamed away");
+
+    // And a first run with no file at all still works.
+    assert.equal(store.loadConfig().uuid, "secret-access-key");
+  } finally {
+    process.env.HOME = home;
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
