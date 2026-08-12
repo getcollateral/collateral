@@ -650,3 +650,42 @@ test("sysproxy: the synchronous off-switch never throws, because it runs in an e
   assert.doesNotThrow(() => setSocksOffSync("No Such Network Service ZZZ"),
     "networksetup failing for an unknown service is reported, not thrown");
 });
+
+test("server: a client that drops without a CLOSE frame is torn down, not left in CLOSE-WAIT", async () => {
+  // The leak this closes. A clean exit sends a WebSocket CLOSE frame and a reset arrives as
+  // "error", but a client that just vanishes (asleep, killed, network handoff) delivers only a
+  // TCP FIN. The upgrade socket carries allowHalfOpen, so Node emits "end" and stops without
+  // closing the writable half, "close" never fires, and the session was never torn down: the fd
+  // stayed in CLOSE-WAIT holding an upstream that was still connected and still buffering.
+  //
+  // Tested by behaviour rather than by asserting allowHalfOpen, so it keeps holding if Node's
+  // socket semantics shift underneath it.
+  const server = startWorker({
+    port: 0, host: "127.0.0.1", quiet: true,
+    uuid: "11111111-2222-3333-4444-555555555555",
+  });
+  await once(server, "listening");
+  const s = net.connect(server.address().port, "127.0.0.1");
+  try {
+    await once(s, "connect");
+    s.write(
+      `GET /x HTTP/1.1\r\nHost: t\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
+      `Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n`
+    );
+    const [head] = await once(s, "data");
+    assert.match(String(head), /101 Switching Protocols/, "handshake should complete first");
+
+    // Half-close: FIN from us, nothing else. No CLOSE frame, no reset.
+    s.end();
+
+    // With the fix the server sees "end" and tears the session down, so our socket closes.
+    // Without it the server holds its half open forever and this races the timeout.
+    const closed = once(s, "close");
+    const timedOut = new Promise((r) => setTimeout(() => r("TIMEOUT"), 4000));
+    assert.notEqual(await Promise.race([closed.then(() => "closed"), timedOut]), "TIMEOUT",
+      "server left the connection half-open: this is the CLOSE-WAIT leak");
+  } finally {
+    try { s.destroy(); } catch {}
+    server.close();
+  }
+});

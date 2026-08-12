@@ -192,6 +192,21 @@ function handleSession(socket, head, isAllowed, quiet) {
 
   if (head && head.length) feed(head);
   socket.on("data", feed);
+  // A client that leaves cleanly sends a WebSocket CLOSE frame, handled in handle() above, and
+  // one that is reset arrives as "error". The gap was the middle case: a client that simply
+  // drops - laptop asleep, process killed, network handoff - delivers only a TCP FIN.
+  //
+  // The socket from the "upgrade" event is the one http.Server accepted, and http.Server sets
+  // allowHalfOpen so a response can outlive its request's FIN. So on FIN Node emits "end" and
+  // then stops: it does not close the writable half, "close" never fires, and closeAll never
+  // runs. Nothing listened for "end", so the fd sat in CLOSE-WAIT indefinitely, holding its
+  // parser, its dgram socket, and an upstream still ESTABLISHED and still pumping bytes into a
+  // write queue with nobody left to drain it. Measured on a live server after 4.7 days: 53
+  // sockets in CLOSE-WAIT and 537 MB resident.
+  //
+  // `upstream` needs no equivalent - a plain net.connect socket defaults to allowHalfOpen
+  // false, so it ends its own writable half on FIN and reaches "close" by itself.
+  socket.on("end", closeAll);
   socket.on("close", closeAll);
   socket.on("error", closeAll);
 }
