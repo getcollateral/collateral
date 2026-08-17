@@ -29,22 +29,78 @@ export function parseKeys(lines) {
 }
 
 // Accepts a single `uuid`, an array `uuids`, and/or a `keysFile` (one UUID per line, `#` comments).
-// The keys file is re-read on change (fs.watch), so adding or revoking a friend's key on the VM
-// takes effect immediately, with no restart.
+// The keys file is re-read on change, so adding or revoking a key takes effect immediately, with
+// no restart.
+//
+// When a keysFile is configured it is the SOLE source of truth. `uuid`/`uuids` are seeds: what a
+// local run with no file uses, and the fallback for a box whose file is missing or empty. They
+// are deliberately not unioned into the allowed set on every reload.
+//
+// Unioning them was a hole with no floor. provision/vps.js writes the owner's key into the keys
+// file AND into USER_UUID in /opt/collateral/env, and every load put USER_UUID straight back.
+// Nothing that edits the keys file can reach an env var - not removeKey in vps.js, not the Mac
+// app's ServerKeys.remove, not its key rotation - so the provision-time key stayed valid forever:
+// absent from the owner's own config, invisible in the friends list, unrevokable from either
+// client. Rotation reported success while the key it had just removed still opened the tunnel.
+// Three live servers were found in exactly that state, two of them sharing one such key.
 export function startWorker({ port = 8787, host = "127.0.0.1", uuid, uuids, keysFile, wsPath, quiet = false } = {}) {
+  const seeds = [];
+  if (Array.isArray(uuids)) seeds.push(...uuids);
+  if (uuid) seeds.push(uuid);
+
   let allowed = new Set();
-  const loadKeys = () => {
-    const lines = [];
-    if (keysFile) { try { lines.push(...fs.readFileSync(keysFile, "utf8").split("\n")); } catch {} }
-    if (Array.isArray(uuids)) lines.push(...uuids);
-    if (uuid) lines.push(uuid);
-    allowed = parseKeys(lines);
-    if (!quiet) console.log(`[server] ${allowed.size} key(s) loaded`);
+  const sessions = new Set();
+
+  // Revoking a key has to disconnect whoever holds it, not merely refuse their next connection.
+  //
+  // isAllowed is consulted once per session, when the VLESS header arrives, so a revoked key
+  // kept working for as long as the socket stayed open - and a tunnel socket stays open for
+  // days. A live server was found still carrying 38 sockets authorised under a key rotated away
+  // half an hour earlier, which is exactly what "I revoked them and they are still connected"
+  // looks like from the outside. 1008 is the code a key rejected at handshake already gets, so
+  // the client sees one consistent signal whichever way it is turned away.
+  const evictRevoked = () => {
+    let n = 0;
+    for (const s of [...sessions]) {
+      if (s.keyHex !== null && !allowed.has(s.keyHex)) { s.close(1008); n += 1; }
+    }
+    if (n && !quiet) console.log(`[server] closed ${n} session(s) on revoked key(s)`);
+    return n;
   };
+
+  const loadKeys = () => {
+    let fromFile = null;
+    if (keysFile) { try { fromFile = parseKeys(fs.readFileSync(keysFile, "utf8").split("\n")); } catch {} }
+    // Empty or unreadable falls back to the seeds rather than locking everyone out, and says so.
+    // A server that answers nobody is a worse failure than one still accepting the key it was
+    // built with, and an empty file is what a half-finished setup leaves behind.
+    if (fromFile && fromFile.size) {
+      allowed = fromFile;
+    } else {
+      if (keysFile && !quiet) console.warn(`[server] ${keysFile} is empty or unreadable; falling back to the provisioning key`);
+      allowed = parseKeys(seeds);
+    }
+    if (!quiet) console.log(`[server] ${allowed.size} key(s) loaded`);
+    return evictRevoked();
+  };
+
   loadKeys();
   if (!allowed.size) throw new Error("startWorker: at least one key (uuid / uuids / keysFile) is required");
   if (keysFile) {
-    try { fs.watch(keysFile, { persistent: false }, () => loadKeys()); } catch {}
+    // Re-armed after every event on purpose. Both clients revoke by writing a temp file and
+    // mv-ing it over this one, which replaces the inode, and a watch on the old inode never
+    // fires again. Left as a one-shot, the documented "re-read on change" quietly stopped
+    // working after the very first revoke and everything afterwards leaned on SIGHUP alone.
+    const arm = () => {
+      try {
+        const w = fs.watch(keysFile, { persistent: false }, () => {
+          try { w.close(); } catch {}
+          loadKeys();
+          arm();
+        });
+      } catch {}
+    };
+    arm();
     process.on("SIGHUP", loadKeys); // explicit reload signal - belt-and-suspenders with the file watch
   }
   const isAllowed = (u) => allowed.has(hexOf(u));
@@ -90,7 +146,7 @@ export function startWorker({ port = 8787, host = "127.0.0.1", uuid, uuids, keys
         "Connection: Upgrade\r\n" +
         `Sec-WebSocket-Accept: ${accept}\r\n\r\n`
     );
-    handleSession(socket, head, isAllowed, quiet);
+    handleSession(socket, head, isAllowed, quiet, sessions);
   });
 
   server.listen(port, host, () => {
@@ -101,7 +157,7 @@ export function startWorker({ port = 8787, host = "127.0.0.1", uuid, uuids, keys
 
 const UDP_IDLE_MS = 60000; // close an idle UDP association after this long (no close signal in UDP)
 
-function handleSession(socket, head, isAllowed, quiet) {
+function handleSession(socket, head, isAllowed, quiet, sessions) {
   const parser = new FrameParser();
   let mode = null;         // "tcp" | "udp"
   let upstream = null;     // TCP: net.Socket
@@ -110,9 +166,17 @@ function handleSession(socket, head, isAllowed, quiet) {
   let closed = false;
   let idleTimer = null;
 
+  // Registered for the whole life of the connection, including before a header arrives, so the
+  // entry is removed on exactly one path. `keyHex` stays null until a key is accepted, and a
+  // null-keyed session is never evicted: it has not been let in yet, so there is nothing to
+  // revoke, and it is already bounded by the handshake completing or the socket closing.
+  const session = { keyHex: null, close: (code) => closeAll(code) };
+  sessions.add(session);
+
   const closeAll = (code) => {
     if (closed) return;
     closed = true;
+    sessions.delete(session);
     if (idleTimer) clearTimeout(idleTimer);
     const payload = code ? Buffer.from([(code >> 8) & 0xff, code & 0xff]) : Buffer.alloc(0);
     try { socket.write(encodeFrame(OPCODES.CLOSE, payload)); } catch {}
@@ -139,6 +203,9 @@ function handleSession(socket, head, isAllowed, quiet) {
           return closeAll();
         }
         if (!isAllowed(hdr.uuid)) return closeAll(1008); // 1008 (policy violation) = "key rejected/revoked"
+        // Recorded so a later revoke can find this session and close it. Set only after the
+        // key has been accepted, which is what makes it the right thing to re-check on reload.
+        session.keyHex = hexOf(hdr.uuid);
 
         if (hdr.command === 1) {
           mode = "tcp";

@@ -694,6 +694,142 @@ test("server: a client that drops without a CLOSE frame is torn down, not left i
   }
 });
 
+// Open a tunnel session and hand back the socket. The destination must be a listener that
+// accepts, so that "the socket closed" can only mean the key was refused, never that the
+// upstream was unreachable.
+async function tunnelSession(port, uuidStr, sinkPort) {
+  const s = net.connect(port, "127.0.0.1");
+  await once(s, "connect");
+  s.write(
+    `GET /x HTTP/1.1\r\nHost: t\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
+    `Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n`
+  );
+  const [head] = await once(s, "data");
+  assert.match(String(head), /101 Switching Protocols/, "handshake should complete first");
+  s.write(encodeFrame(OPCODES.BIN, Buffer.from(encodeVlessHeader({
+    uuid: uuidToBytes(uuidStr), host: "127.0.0.1", port: sinkPort, command: 1,
+  }))));
+  return s;
+}
+
+const settle = (s, ms = 700) => Promise.race([
+  once(s, "close").then(() => "closed"),
+  new Promise((r) => setTimeout(() => r("open"), ms)),
+]);
+
+async function acceptingSink() {
+  const sink = net.createServer((c) => c.on("data", () => {}));
+  sink.listen(0, "127.0.0.1");
+  await once(sink, "listening");
+  return sink;
+}
+
+test("server: a key absent from the keys file is refused, even when it is the provisioning key", async () => {
+  // The hole that made key rotation a no-op. provision/vps.js writes the owner's key into BOTH
+  // the keys file and USER_UUID in /opt/collateral/env, and startWorker unioned that env value
+  // back in on every load. Nothing that edits the keys file can reach an env var, so the
+  // provision-time key stayed valid forever: rotation removed it from the file, reported
+  // success, and the removed key still opened the tunnel. Found live on three servers, two of
+  // them sharing one such key.
+  const dir = fs.mkdtempSync(pathmod.join(os.tmpdir(), "collateral-keys-"));
+  const keysFile = pathmod.join(dir, "keys");
+  const PROVISIONED = "11111111-2222-3333-4444-555555555555"; // what USER_UUID still holds
+  const CURRENT = "99999999-8888-7777-6666-555555555555";     // what the file holds after rotating
+  fs.writeFileSync(keysFile, CURRENT + "\n");
+
+  const sink = await acceptingSink();
+  const server = startWorker({ port: 0, host: "127.0.0.1", quiet: true, uuid: PROVISIONED, keysFile });
+  await once(server, "listening");
+  const port = server.address().port;
+  // Torn down in `finally`, never inline after an assertion. server.close() stops accepting but
+  // waits on connections already open, so a socket left behind by a failed assert hangs the whole
+  // run instead of reporting the regression. A test for a bug has to fail fast when the bug is back.
+  const opened = [];
+  try {
+    const rotated = await tunnelSession(port, PROVISIONED, sink.address().port);
+    opened.push(rotated);
+    assert.equal(await settle(rotated), "closed",
+      "the provisioning key is not in the keys file and must be refused: unioning USER_UUID back in is the rotation hole");
+
+    const current = await tunnelSession(port, CURRENT, sink.address().port);
+    opened.push(current);
+    assert.equal(await settle(current), "open", "the key that IS in the file must still work");
+  } finally {
+    for (const s of opened) { try { s.destroy(); } catch {} }
+    server.close();
+    sink.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("server: revoking a key disconnects the session already using it", async () => {
+  // Revocation used to mean "refuse the next connection". isAllowed is consulted once, when the
+  // VLESS header arrives, and nothing revisited a session afterwards, so a revoked key kept
+  // working until its holder chose to disconnect - on a tunnel, days. A live server was found
+  // still carrying 38 sockets on a key rotated away half an hour earlier, and its owner
+  // reasonably concluded the rotation had silently failed.
+  //
+  // Revoked here the way both clients do it, writing a temp file and renaming over the original,
+  // which replaces the inode. That also exercises the watch re-arm: a one-shot fs.watch dies on
+  // the first rename and never reports a change again.
+  const dir = fs.mkdtempSync(pathmod.join(os.tmpdir(), "collateral-revoke-"));
+  const keysFile = pathmod.join(dir, "keys");
+  const DOOMED = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+  const KEPT = "12121212-3434-5656-7878-9a9a9a9a9a9a";
+  fs.writeFileSync(keysFile, `# friend\n${DOOMED}\n# owner\n${KEPT}\n`);
+
+  const sink = await acceptingSink();
+  const server = startWorker({ port: 0, host: "127.0.0.1", quiet: true, keysFile });
+  await once(server, "listening");
+  const port = server.address().port;
+  const doomed = await tunnelSession(port, DOOMED, sink.address().port);
+  const kept = await tunnelSession(port, KEPT, sink.address().port);
+  try {
+    assert.equal(await settle(doomed), "open", "both sessions should be up before the revoke");
+
+    const gone = once(doomed, "close");
+    const tmp = keysFile + ".tmp";
+    fs.writeFileSync(tmp, `# owner\n${KEPT}\n`);
+    fs.renameSync(tmp, keysFile);
+
+    const timedOut = new Promise((r) => setTimeout(() => r("TIMEOUT"), 5000));
+    assert.notEqual(await Promise.race([gone.then(() => "closed"), timedOut]), "TIMEOUT",
+      "the revoked key's live session was left connected");
+    assert.equal(await settle(kept, 100), "open",
+      "revoking one key must not disconnect everybody else");
+  } finally {
+    try { doomed.destroy(); } catch {}
+    try { kept.destroy(); } catch {}
+    server.close();
+    sink.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("server: an empty keys file falls back to the provisioning key rather than locking everyone out", async () => {
+  // The other half of making the file authoritative. A server that answers nobody is a worse
+  // failure than one still accepting the key it was built with, and a file holding nothing but
+  // comments is what a half-finished setup leaves behind.
+  const dir = fs.mkdtempSync(pathmod.join(os.tmpdir(), "collateral-empty-"));
+  const keysFile = pathmod.join(dir, "keys");
+  fs.writeFileSync(keysFile, "# every key revoked\n\n");
+  const SEED = "11111111-2222-3333-4444-555555555555";
+
+  const sink = await acceptingSink();
+  const server = startWorker({ port: 0, host: "127.0.0.1", quiet: true, uuid: SEED, keysFile });
+  await once(server, "listening");
+  let s = null;
+  try {
+    s = await tunnelSession(server.address().port, SEED, sink.address().port);
+    assert.equal(await settle(s), "open", "an empty keys file must not brick the server");
+  } finally {
+    if (s) try { s.destroy(); } catch {}
+    server.close();
+    sink.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("config: a file that will not parse is never overwritten with just the patch", async () => {
   // The data-loss path. loadConfig answers "no file" and "corrupt file" the same way, which is
   // right for a reader and catastrophic for a writer: merge a patch onto defaults, save it, and
